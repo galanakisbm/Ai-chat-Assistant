@@ -29,12 +29,32 @@ class Optic_AiChat extends Module
 
     public function install()
     {
+        // Δημιουργία πίνακα για chat logs
+        $sql = "CREATE TABLE IF NOT EXISTS `"._DB_PREFIX_."optic_aichat_logs` (
+            `id_chat_log` INT(11) NOT NULL AUTO_INCREMENT,
+            `id_customer` INT(11) DEFAULT NULL,
+            `message` TEXT NOT NULL,
+            `response` TEXT NOT NULL,
+            `page_url` VARCHAR(255) DEFAULT NULL,
+            `page_context` TEXT DEFAULT NULL,
+            `session_id` VARCHAR(100) DEFAULT NULL,
+            `date_add` DATETIME NOT NULL,
+            `response_time` FLOAT DEFAULT NULL,
+            PRIMARY KEY (`id_chat_log`),
+            KEY `id_customer` (`id_customer`),
+            KEY `session_id` (`session_id`)
+        ) ENGINE="._MYSQL_ENGINE_." DEFAULT CHARSET=utf8;";
+        
+        Db::getInstance()->execute($sql);
+        
         // Ορισμός default ρυθμίσεων κατά την εγκατάσταση
         return parent::install() &&
             $this->registerHook('displayHeader') &&
             $this->registerHook('displayFooter') &&
             Configuration::updateValue('OPTIC_AICHAT_WIDGET_TITLE', 'OpticWeb Assistant') &&
-            Configuration::updateValue('OPTIC_AICHAT_SYSTEM_PROMPT', 'Είσαι ένας ευγενικός βοηθός για το κατάστημά μας. Απάντησε σύντομα και στα Ελληνικά.');
+            Configuration::updateValue('OPTIC_AICHAT_SYSTEM_PROMPT', 'Είσαι ένας ευγενικός βοηθός για το κατάστημά μας. Απάντησε σύντομα και στα Ελληνικά.') &&
+            Configuration::updateValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT', 1) &&
+            Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', '');
     }
 
     public function uninstall()
@@ -43,6 +63,12 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_API_KEY');
         Configuration::deleteByName('OPTIC_AICHAT_SYSTEM_PROMPT');
         Configuration::deleteByName('OPTIC_AICHAT_WIDGET_TITLE');
+        Configuration::deleteByName('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
+        Configuration::deleteByName('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
+        
+        // Διαγραφή πίνακα chat logs
+        $sql = "DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`";
+        Db::getInstance()->execute($sql);
         
         return parent::uninstall();
     }
@@ -59,6 +85,8 @@ class Optic_AiChat extends Module
             $apiKey = Tools::getValue('OPTIC_AICHAT_API_KEY');
             $prompt = Tools::getValue('OPTIC_AICHAT_SYSTEM_PROMPT');
             $title = Tools::getValue('OPTIC_AICHAT_WIDGET_TITLE');
+            $enablePageContext = Tools::getValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
+            $pageContextTemplate = Tools::getValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
 
             if (!$apiKey || empty($apiKey)) {
                 $output .= $this->displayError($this->l('Παρακαλώ εισάγετε το API Key.'));
@@ -66,6 +94,8 @@ class Optic_AiChat extends Module
                 Configuration::updateValue('OPTIC_AICHAT_API_KEY', $apiKey);
                 Configuration::updateValue('OPTIC_AICHAT_SYSTEM_PROMPT', $prompt);
                 Configuration::updateValue('OPTIC_AICHAT_WIDGET_TITLE', $title);
+                Configuration::updateValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT', (int)$enablePageContext);
+                Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', $pageContextTemplate);
                 $output .= $this->displayConfirmation($this->l('Οι ρυθμίσεις αποθηκεύτηκαν.'));
             }
         }
@@ -107,6 +137,25 @@ class Optic_AiChat extends Module
                         'desc' => $this->l('Δώσε οδηγίες στο bot (π.χ. "Είμαστε το κατάστημα Ρούχων Χ, έχουμε δωρεάν μεταφορικά άνω των 50€").'),
                         'required' => true,
                     ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Enable Page Context'),
+                        'name' => 'OPTIC_AICHAT_ENABLE_PAGE_CONTEXT',
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                        'desc' => $this->l('Allow AI to read page-specific information')
+                    ],
+                    [
+                        'type' => 'textarea',
+                        'label' => $this->l('Page Context Template'),
+                        'name' => 'OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE',
+                        'rows' => 8,
+                        'desc' => $this->l('Template for page information. Available variables: {PAGE_TITLE}, {PAGE_URL}, {PAGE_TYPE}, {PRODUCT_NAME}, {PRODUCT_PRICE}, {CATEGORY_NAME}'),
+                        'required' => false
+                    ],
                 ],
                 'submit' => [
                     'title' => $this->l('Αποθήκευση'),
@@ -130,6 +179,8 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_WIDGET_TITLE'] = Configuration::get('OPTIC_AICHAT_WIDGET_TITLE');
         $helper->fields_value['OPTIC_AICHAT_API_KEY'] = Configuration::get('OPTIC_AICHAT_API_KEY');
         $helper->fields_value['OPTIC_AICHAT_SYSTEM_PROMPT'] = Configuration::get('OPTIC_AICHAT_SYSTEM_PROMPT');
+        $helper->fields_value['OPTIC_AICHAT_ENABLE_PAGE_CONTEXT'] = Configuration::get('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
+        $helper->fields_value['OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE'] = Configuration::get('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
 
         return $helper->generateForm([$fields_form]);
     }

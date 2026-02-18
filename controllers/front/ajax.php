@@ -219,7 +219,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                     'image' => $imagePath,
                     'description' => strip_tags($productObj->description_short), 
                     'features' => implode(", ", $feats),
-                    'variants' => $variantsText,
+                    'variants' => $varsText,
                     'stock' => StockAvailable::getQuantityAvailableByProduct($row['id_product'], 0) > 0 ? 'In Stock' : 'Out of Stock'
                 ];
             }
