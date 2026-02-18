@@ -66,11 +66,16 @@ document.addEventListener('DOMContentLoaded', function() {
         let history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
         let recentHistory = history.slice(-6); // Στέλνουμε τα τελευταία 6
 
+        // --- ΛΗΨΗ PAGE CONTEXT ---
+        const pageContext = getPageContext();
+
         fetch(optic_chat_ajax_url, {
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            // Στέλνουμε ΚΑΙ το history
-            body: 'ajax=1&action=displayAjaxMessage&message=' + encodeURIComponent(message) + '&history=' + encodeURIComponent(JSON.stringify(recentHistory))
+            // Στέλνουμε ΚΑΙ το history ΚΑΙ το page context
+            body: 'ajax=1&action=displayAjaxMessage&message=' + encodeURIComponent(message) + 
+                  '&history=' + encodeURIComponent(JSON.stringify(recentHistory)) +
+                  '&page_context=' + encodeURIComponent(JSON.stringify(pageContext))
         })
         .then(response => response.json())
         .then(data => {
@@ -88,6 +93,35 @@ document.addEventListener('DOMContentLoaded', function() {
             if (loadingMsg) loadingMsg.remove();
             addMessageToChat('Connection Error.', 'bot-message');
         });
+    }
+
+    function getPageContext() {
+        const context = {
+            url: window.location.href,
+            title: document.title,
+            type: 'unknown'
+        };
+        
+        // Detect page type
+        if (document.body.classList.contains('product')) {
+            context.type = 'product';
+            const productName = document.querySelector('.product-title, h1[itemprop="name"]');
+            const productPrice = document.querySelector('.product-price, [itemprop="price"]');
+            if (productName) context.productName = productName.textContent.trim();
+            if (productPrice) context.productPrice = productPrice.textContent.trim();
+        } else if (document.body.classList.contains('category')) {
+            context.type = 'category';
+            const categoryName = document.querySelector('.category-title, h1');
+            if (categoryName) context.categoryName = categoryName.textContent.trim();
+        } else if (document.body.classList.contains('cms')) {
+            context.type = 'cms';
+        } else if (document.body.classList.contains('index')) {
+            context.type = 'home';
+        } else if (document.body.classList.contains('cart')) {
+            context.type = 'cart';
+        }
+        
+        return context;
     }
 
     function addMessageToChat(text, className) {
