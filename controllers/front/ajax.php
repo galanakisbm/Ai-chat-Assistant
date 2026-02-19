@@ -47,59 +47,107 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
 
     private function parseAIResponse($response)
     {
-        // Parse [PRODUCT:...] tags and convert to structured data
-        // Using pipe | as delimiter since it won't appear in URLs or product names
-        $pattern = '/\[PRODUCT:([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/';
+        // First try to parse markdown format (###...![](image)...Τιμή...€...[](url))
+        $markdownPattern = '/###\s*(.+?)\n.*?\!\[.*?\]\((https?:\/\/[^\)]+)\).*?Τιμή[:\*\s]+([\d,\.]+)€.*?\[.*?\]\((https?:\/\/[^\)]+)\)/s';
+        preg_match_all($markdownPattern, $response, $mdMatches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
         
-        $result = [
-            'type' => 'mixed',
-            'content' => []
-        ];
-        
-        $lastPos = 0;
-        preg_match_all($pattern, $response, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
-        
-        foreach ($matches as $match) {
-            // Add text before product
-            $textBefore = substr($response, $lastPos, $match[0][1] - $lastPos);
-            if (trim($textBefore)) {
+        if (!empty($mdMatches)) {
+            // Markdown format detected
+            $result = [
+                'type' => 'mixed',
+                'content' => []
+            ];
+            
+            // Add intro text if exists
+            $firstProductPos = $mdMatches[0][0][1];
+            if ($firstProductPos > 0) {
+                $introText = trim(substr($response, 0, $firstProductPos));
+                if ($introText) {
+                    $result['content'][] = [
+                        'type' => 'text',
+                        'text' => $introText
+                    ];
+                }
+            }
+            
+            // Add products from markdown
+            $lastPos = 0;
+            foreach ($mdMatches as $match) {
+                $result['content'][] = [
+                    'type' => 'product',
+                    'name' => trim($match[1][0]),
+                    'image' => $match[2][0],
+                    'price' => $match[3][0],
+                    'url' => $match[4][0]
+                ];
+                $lastPos = $match[0][1] + strlen($match[0][0]);
+            }
+            
+            // Add outro text if exists
+            $outroText = trim(substr($response, $lastPos));
+            // Remove common suffixes
+            $outroText = preg_replace('/^[\.\s]*/', '', $outroText);
+            if ($outroText && strlen($outroText) > 10) {
                 $result['content'][] = [
                     'type' => 'text',
-                    'text' => trim($textBefore)
+                    'text' => $outroText
                 ];
             }
             
-            // Add product card
-            $result['content'][] = [
-                'type' => 'product',
-                'id' => $match[1][0],
-                'name' => $match[2][0],
-                'price' => $match[3][0],
-                'image' => $match[4][0],
-                'url' => $match[5][0]
+            return $result;
+        }
+        
+        // Then try [PRODUCT:...] format (using pipe | as delimiter)
+        $pattern = '/\[PRODUCT:([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/';
+        preg_match_all($pattern, $response, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        
+        if (!empty($matches)) {
+            $result = [
+                'type' => 'mixed',
+                'content' => []
             ];
             
-            $lastPos = $match[0][1] + strlen($match[0][0]);
+            $lastPos = 0;
+            foreach ($matches as $match) {
+                // Add text before product
+                $textBefore = substr($response, $lastPos, $match[0][1] - $lastPos);
+                if (trim($textBefore)) {
+                    $result['content'][] = [
+                        'type' => 'text',
+                        'text' => trim($textBefore)
+                    ];
+                }
+                
+                // Add product card
+                $result['content'][] = [
+                    'type' => 'product',
+                    'id' => $match[1][0],
+                    'name' => $match[2][0],
+                    'price' => $match[3][0],
+                    'image' => $match[4][0],
+                    'url' => $match[5][0]
+                ];
+                
+                $lastPos = $match[0][1] + strlen($match[0][0]);
+            }
+            
+            // Add remaining text
+            $textAfter = substr($response, $lastPos);
+            if (trim($textAfter)) {
+                $result['content'][] = [
+                    'type' => 'text',
+                    'text' => trim($textAfter)
+                ];
+            }
+            
+            return $result;
         }
         
-        // Add remaining text
-        $textAfter = substr($response, $lastPos);
-        if (trim($textAfter)) {
-            $result['content'][] = [
-                'type' => 'text',
-                'text' => trim($textAfter)
-            ];
-        }
-        
-        // If no products found, return as simple text
-        if (empty($result['content'])) {
-            $result = [
-                'type' => 'text',
-                'content' => $response
-            ];
-        }
-        
-        return $result;
+        // No products found, return as simple text
+        return [
+            'type' => 'text',
+            'content' => $response
+        ];
     }
 
     private function returnJson($data)
@@ -293,6 +341,15 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
     private function searchProducts($query)
     {
         $id_lang = Context::getContext()->language->id;
+        
+        // Try XML first (faster)
+        $xmlProducts = $this->searchProductsFromXML($query);
+        
+        if (!empty($xmlProducts)) {
+            return $xmlProducts;
+        }
+        
+        // Fallback to database
         $searchResults = Search::find($id_lang, $query, 1, 8, 'position', 'desc');
         
         $products = [];
@@ -327,6 +384,50 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             }
         }
         return empty($products) ? "Δεν βρέθηκαν προϊόντα." : $products;
+    }
+
+    /**
+     * Search products from XML cache
+     */
+    private function searchProductsFromXML($query)
+    {
+        $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
+        
+        if (!file_exists($cacheFile)) {
+            return [];
+        }
+        
+        $jsonContent = file_get_contents($cacheFile);
+        if ($jsonContent === false) {
+            error_log('OpticAiChat: Failed to read products cache file');
+            return [];
+        }
+        
+        $products = json_decode($jsonContent, true);
+        if ($products === null || !is_array($products)) {
+            error_log('OpticAiChat: Failed to parse products cache JSON');
+            return [];
+        }
+        
+        $results = [];
+        $queryLower = mb_strtolower($query);
+        
+        foreach ($products as $product) {
+            $nameLower = mb_strtolower($product['name']);
+            $descLower = mb_strtolower($product['description']);
+            $catsLower = mb_strtolower($product['categories']);
+            
+            // Fuzzy search
+            if (strpos($nameLower, $queryLower) !== false || 
+                strpos($descLower, $queryLower) !== false ||
+                strpos($catsLower, $queryLower) !== false) {
+                $results[] = $product;
+            }
+            
+            if (count($results) >= 5) break;
+        }
+        
+        return $results;
     }
 
     private function getLastOrder()

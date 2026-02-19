@@ -6,9 +6,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const inputField = document.getElementById('optic-chat-input');
     const messagesArea = document.getElementById('optic-chat-messages');
 
-    // Fallback image for missing product images
-    const FALLBACK_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23f0f0f0' width='100' height='100'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3ENo Image%3C/text%3E%3C/svg%3E";
-
     // 1. Load History on Start
     loadChatState();
 
@@ -151,17 +148,23 @@ document.addEventListener('DOMContentLoaded', function() {
         // Handle different response types
         if (typeof data === 'string') {
             // Legacy plain text
-            container.innerHTML = escapeHtml(data);
+            const textDiv = document.createElement('div');
+            textDiv.className = 'bot-text';
+            textDiv.innerHTML = escapeHtml(data).replace(/\n/g, '<br>');
+            container.appendChild(textDiv);
         } else if (data.type === 'text') {
             // Simple text response
-            container.innerHTML = escapeHtml(data.content);
+            const textDiv = document.createElement('div');
+            textDiv.className = 'bot-text';
+            textDiv.innerHTML = escapeHtml(data.content).replace(/\n/g, '<br>');
+            container.appendChild(textDiv);
         } else if (data.type === 'mixed') {
             // Mixed content (text + products)
             data.content.forEach(item => {
                 if (item.type === 'text') {
                     const textDiv = document.createElement('div');
                     textDiv.className = 'bot-text';
-                    textDiv.innerHTML = escapeHtml(item.text);
+                    textDiv.innerHTML = escapeHtml(item.text).replace(/\n/g, '<br>');
                     container.appendChild(textDiv);
                 } else if (item.type === 'product') {
                     const productCard = createProductCard(item);
@@ -176,10 +179,15 @@ document.addEventListener('DOMContentLoaded', function() {
     function createProductCard(product) {
         const card = document.createElement('div');
         card.className = 'product-card';
+        
+        const imageUrl = product.image || '';
+        const fallbackImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23f0f0f0" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999" font-family="Arial" font-size="14"%3EΧωρίς Εικόνα%3C/text%3E%3C/svg%3E';
+        
         card.innerHTML = `
             <div class="product-image">
-                <img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}" 
-                     onerror="this.src='${FALLBACK_IMAGE}'">
+                <img src="${escapeHtml(imageUrl)}" 
+                     alt="${escapeHtml(product.name)}" 
+                     onerror="this.src='${fallbackImage}'">
             </div>
             <div class="product-info">
                 <h4 class="product-name">${escapeHtml(product.name)}</h4>
@@ -189,6 +197,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </a>
             </div>
         `;
+        
         return card;
     }
 
@@ -215,23 +224,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function saveMessageToStorage(data, className) {
         let history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
-        // Store simplified version for history context
-        let text;
-        if (typeof data === 'string') {
-            text = data;
-        } else if (data.type === 'text') {
-            text = data.content;
-        } else if (data.type === 'mixed') {
-            // Extract summary from mixed content for history
-            const textParts = data.content
-                .filter(item => item.type === 'text')
-                .map(item => item.text);
-            const productCount = data.content.filter(item => item.type === 'product').length;
-            text = textParts.join(' ') + (productCount > 0 ? ` [${productCount} products]` : '');
-        } else {
-            text = '[Structured response]';
-        }
-        history.push({ text: text, class: className });
+        // Store the actual data structure for proper restoration
+        history.push({ text: JSON.stringify(data), class: className });
         if (history.length > 50) history = history.slice(-50);
         localStorage.setItem('optic_chat_history', JSON.stringify(history));
     }
