@@ -271,15 +271,28 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         
         $systemInstruction = $basePrompt . 
         " You are a professional e-commerce assistant. Be friendly, concise, and helpful. " .
-        " IMPORTANT RESPONSE FORMAT RULES:\n" .
-        " - When recommending products from search_products results, you MUST format them as:\n" .
+        " CRITICAL PRODUCT DISPLAY RULES:\n" .
+        " - When you receive search_products results, you MUST display them using the [PRODUCT:...] format\n" .
+        " - NEVER give generic responses about product categories when search results are available\n" .
+        " - ALWAYS use this exact format for EACH product:\n" .
         "   [PRODUCT:id|name|price|image|url]\n" .
-        "   Use pipe | as separator (NOT colon). Use exact values from search results.\n" .
-        "   Example: [PRODUCT:19|Προσαρμόσιμη Κούπα|17.24|https://example.com/img.jpg|https://example.com/product]\n" .
-        " - You can include multiple products, one per line\n" .
-        " - When available, mention product details like sizes, dimensions, composition, and stock status in your text\n" .
-        " - Add friendly text before/after products to provide context\n" .
-        " - For non-product responses, use simple, friendly text\n" .
+        " - Use pipe | as separator (NOT colon or comma)\n" .
+        " - Extract exact values from the search_products response\n" .
+        " - Example: [PRODUCT:19|Προσαρμόσιμη Κούπα|17.24|https://example.com/img.jpg|https://example.com/product]\n\n" .
+        " WORKFLOW:\n" .
+        " 1. User asks about products (e.g., 'Δείξε μου ρούχα')\n" .
+        " 2. You call search_products with the query\n" .
+        " 3. You receive an array of products with id, name, price, image, url\n" .
+        " 4. You format EACH product as [PRODUCT:id|name|price|image|url]\n" .
+        " 5. You add friendly text before/after the product list\n\n" .
+        " BAD RESPONSE (generic):\n" .
+        " 'Στο κατάστημά μας έχουμε ρούχα για άνδρες και γυναίκες...'\n\n" .
+        " GOOD RESPONSE (with actual products):\n" .
+        " 'Βρήκα αυτά τα προϊόντα για εσάς:\n" .
+        " [PRODUCT:123|T-shirt Βαμβακερό|25.00|https://example.com/img/123.jpg|https://example.com/product/123]\n" .
+        " [PRODUCT:456|Φούστα Καλοκαιρινή|35.50|https://example.com/img/456.jpg|https://example.com/product/456]'\n\n" .
+        " - If search returns empty array, then say: 'Δεν βρέθηκαν προϊόντα για αυτήν την αναζήτηση.'\n" .
+        " - Include product details (sizes, stock, etc.) in your text if available\n" .
         " - Available tools: search_products, get_cms_page_content, get_my_orders, get_active_offers\n" .
         " - Keep responses concise and helpful\n" .
         " Available CMS pages:\n" . $cmsList .
