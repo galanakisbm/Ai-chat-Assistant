@@ -1,234 +1,394 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-#optic-chat-container, #optic-chat-container * { font-family: 'Manrope', sans-serif; box-sizing: border-box; }
+/* Base Styles */
+#optic-chat-container, 
+#optic-chat-container * { 
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    box-sizing: border-box; 
+}
 
-/* Floating Button */
+/* Floating Button - Modernized */
 #optic-chat-toggle {
-    position: fixed; bottom: 20px; right: 20px;
-    background-color: #268CCD; color: white;
-    border: none; border-radius: 50%; width: 60px; height: 60px;
-    font-size: 24px; cursor: pointer; box-shadow: 0 4px 15px rgba(38,140,205,0.4);
-    z-index: 9999; transition: transform 0.3s;
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 64px;
+    height: 64px;
+    font-size: 28px;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(38, 140, 205, 0.4);
+    z-index: 9999;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
-#optic-chat-toggle:hover { transform: scale(1.1); }
 
-/* Chat Window */
+#optic-chat-toggle:hover {
+    transform: scale(1.1);
+    box-shadow: 0 12px 32px rgba(38, 140, 205, 0.5);
+}
+
+/* Chat Container - Modern Card Design */
 #optic-chat-container {
-    position: fixed; bottom: 90px; right: 20px; width: 360px; height: 550px;
-    background: white; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-    display: flex; flex-direction: column; z-index: 9999;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-    border: 1px solid #eef;
+    position: fixed;
+    bottom: 100px;
+    right: 24px;
+    width: 400px;
+    max-width: calc(100vw - 48px);
+    height: 600px;
+    max-height: calc(100vh - 140px);
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    z-index: 9998;
+    overflow: hidden;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.optic-chat-closed { opacity: 0; pointer-events: none; transform: translateY(20px) scale(0.95); }
-.optic-chat-open { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
 
-/* Header */
+#optic-chat-container.optic-chat-closed {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(20px) scale(0.95);
+}
+
+#optic-chat-container.optic-chat-open {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+/* Header - Gradient Design */
 .optic-chat-header {
-    background: linear-gradient(135deg, #268CCD 0%, #1a6fb0 100%);
-    color: white; padding: 16px; display: flex; justify-content: space-between; align-items: center;
-    border-top-left-radius: 16px; border-top-right-radius: 16px;
+    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
+    color: white;
+    padding: 20px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 20px 20px 0 0;
 }
-.header-title { font-weight: 700; display: flex; align-items: center; gap: 8px; }
-.chat-header-logo { height: 24px; background: white; padding: 2px; border-radius: 4px; }
-#optic-chat-close { background: none; border: none; color: white; font-size: 20px; cursor: pointer; }
 
-/* Messages */
-#optic-chat-messages { flex: 1; padding: 15px; overflow-y: auto; background-color: #f8f9fa; display: flex; flex-direction: column; gap: 12px; }
-.message { padding: 12px 16px; border-radius: 12px; max-width: 85%; font-size: 14px; line-height: 1.5; word-wrap: break-word; }
-.bot-message { background: white; color: #333; align-self: flex-start; border-bottom-left-radius: 2px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-.user-message { background: #268CCD; color: white; align-self: flex-end; border-bottom-right-radius: 2px; box-shadow: 0 2px 5px rgba(38,140,205,0.2); }
-
-/* Product Cards */
-.bot-message ul { list-style: none; padding: 0; margin: 5px 0 0 0; }
-.bot-message li {
-    background: #fff; border: 1px solid #eee; border-radius: 10px;
-    padding: 10px; margin-top: 10px; display: flex; align-items: center; gap: 12px;
-    transition: transform 0.2s;
+.header-title {
+    font-weight: 600;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
-.bot-message li:hover { transform: translateY(-2px); box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
-.product-chat-img { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
-.product-info { flex: 1; display: flex; flex-direction: column; }
-.bot-message li strong { font-size: 13px; line-height: 1.2; margin-bottom: 4px; color: #222; }
-.price-tag { font-weight: bold; color: #268CCD; }
 
-/* Call to Action Button */
-.bot-message a {
-    display: block; margin-top: 6px; padding: 6px 0; background-color: #268CCD;
-    color: white !important; text-decoration: none; border-radius: 6px;
-    font-size: 12px; font-weight: 600; text-align: center;
+.chat-header-logo {
+    height: 32px;
+    width: 32px;
+    object-fit: contain;
+    background: white;
+    padding: 4px;
+    border-radius: 8px;
 }
-.bot-message a:hover { background-color: #1b6cb6; }
 
-/* Quick Replies */
+#optic-chat-close {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+#optic-chat-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: rotate(90deg);
+}
+
+/* Messages Area - Clean Design */
+#optic-chat-messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: #f8f9fb;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Scrollbar Styling */
+#optic-chat-messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+#optic-chat-messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#optic-chat-messages::-webkit-scrollbar-thumb {
+    background: #cbd5e0;
+    border-radius: 3px;
+}
+
+#optic-chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #a0aec0;
+}
+
+/* Message Bubbles - Modern Design */
+.message {
+    padding: 12px 16px;
+    border-radius: 16px;
+    max-width: 85%;
+    font-size: 15px;
+    line-height: 1.5;
+    word-wrap: break-word;
+    animation: messageSlideIn 0.3s ease;
+}
+
+@keyframes messageSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.user-message {
+    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
+    color: white;
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+}
+
+.bot-message {
+    background: white;
+    color: #2d3748;
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.bot-text {
+    margin-bottom: 12px;
+    line-height: 1.6;
+}
+
+.bot-text:last-child {
+    margin-bottom: 0;
+}
+
+/* Product Cards - Beautiful Design */
+.product-card {
+    background: linear-gradient(135deg, #f6f8fa 0%, #ffffff 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 8px 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.product-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+.product-image {
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+    background: #f7fafc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.product-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.product-card:hover .product-image img {
+    transform: scale(1.05);
+}
+
+.product-info {
+    padding: 16px;
+}
+
+.product-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2d3748;
+    margin: 0 0 8px 0;
+}
+
+.product-price {
+    font-size: 20px;
+    font-weight: 700;
+    color: #268CCD;
+    margin-bottom: 12px;
+}
+
+.product-link {
+    display: inline-block;
+    background: #268CCD;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.product-link:hover {
+    background: #1a6ba3;
+    transform: translateX(4px);
+}
+
+/* Typing Indicator - Animated */
+.typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.typing-indicator::after {
+    content: '●●●';
+    animation: typingDots 1.4s infinite;
+    letter-spacing: 2px;
+}
+
+@keyframes typingDots {
+    0%, 20% { content: '●○○'; }
+    40% { content: '●●○'; }
+    60%, 100% { content: '●●●'; }
+}
+
+/* Quick Replies - Pill Design */
 #optic-chat-suggestions {
-    padding: 10px 15px; display: flex; gap: 8px; overflow-x: auto;
-    border-top: 1px solid #f0f0f0; background: #fff; scrollbar-width: none;
+    padding: 12px 20px;
+    background: white;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
 }
+
+#optic-chat-suggestions::-webkit-scrollbar {
+    height: 4px;
+}
+
+#optic-chat-suggestions::-webkit-scrollbar-thumb {
+    background: #cbd5e0;
+    border-radius: 2px;
+}
+
 .quick-reply-btn {
-    background: #f0f4f8; border: 1px solid #dcebf7; border-radius: 15px;
-    padding: 6px 12px; font-size: 12px; color: #268CCD; cursor: pointer; white-space: nowrap; transition: all 0.2s;
+    background: #f7fafc;
+    border: 1px solid #e2e8f0;
+    color: #4a5568;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
 }
-.quick-reply-btn:hover { background: #268CCD; color: white; }
 
-/* Input */
-.optic-chat-input-area { padding: 15px; background: white; display: flex; gap: 10px; }
-#optic-chat-input { flex: 1; padding: 10px 15px; border: 1px solid #e0e0e0; border-radius: 25px; outline: none; font-size: 14px; }
-#optic-chat-input:focus { border-color: #268CCD; }
+.quick-reply-btn:hover {
+    background: #268CCD;
+    color: white;
+    border-color: #268CCD;
+    transform: translateY(-1px);
+}
+
+/* Input Area - Clean Design */
+.optic-chat-input-area {
+    padding: 16px 20px;
+    background: white;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 12px;
+}
+
+#optic-chat-input {
+    flex: 1;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 15px;
+    outline: none;
+    transition: all 0.2s;
+    background: #f8f9fb;
+}
+
+#optic-chat-input:focus {
+    border-color: #268CCD;
+    background: white;
+}
+
 #optic-chat-send {
-    background: #268CCD; border: none; color: white; border-radius: 50%;
-    width: 40px; height: 40px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
 }
 
-/* Mobile Optimizations */
-@media (max-width: 768px) {
+#optic-chat-send:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(38, 140, 205, 0.3);
+}
+
+#optic-chat-send:active {
+    transform: scale(0.98);
+}
+
+/* Mobile Responsive */
+@media (max-width: 480px) {
     #optic-chat-container {
-        width: 100%;
-        height: 100%;
         bottom: 0;
         right: 0;
-        border-radius: 0;
+        width: 100%;
+        max-width: 100%;
+        height: 100%;
         max-height: 100vh;
-    }
-    
-    #optic-chat-toggle {
-        bottom: 15px;
-        right: 15px;
-        width: 55px;
-        height: 55px;
-        font-size: 22px;
+        border-radius: 0;
     }
     
     .optic-chat-header {
         border-radius: 0;
     }
     
+    #optic-chat-toggle {
+        bottom: 20px;
+        right: 20px;
+        width: 56px;
+        height: 56px;
+        font-size: 24px;
+    }
+    
     .message {
         max-width: 90%;
-        font-size: 13px;
     }
     
-    .quick-reply-btn {
-        font-size: 11px;
-        padding: 5px 10px;
+    .product-image {
+        height: 150px;
     }
-    
-    #optic-chat-input {
-        font-size: 16px; /* Prevent zoom on iOS */
-    }
-    
-    #optic-chat-send {
-        min-width: 44px;
-        min-height: 44px;
-    }
-}
-
-@media (max-width: 480px) {
-    #optic-chat-container {
-        width: 100vw;
-    }
-    
-    .product-chat-img {
-        width: 50px;
-        height: 50px;
-    }
-    
-    .bot-message li {
-        font-size: 12px;
-        padding: 8px;
-    }
-}
-
-/* Markdown Rendering Styles for Bot Messages */
-.bot-message img {
-    max-width: 100%;
-    height: auto;
-    border-radius: 8px;
-    margin: 10px 0;
-    display: block;
-}
-
-.bot-message h1,
-.bot-message h2,
-.bot-message h3,
-.bot-message h4 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 12px 0 8px 0;
-    color: #268CCD;
-}
-
-.bot-message h1 { font-size: 18px; }
-.bot-message h2 { font-size: 17px; }
-
-.bot-message p {
-    margin: 8px 0;
-    line-height: 1.6;
-}
-
-.bot-message hr {
-    margin: 15px 0;
-    border: none;
-    border-top: 1px solid #e0e0e0;
-}
-
-.bot-message a {
-    color: #268CCD;
-    text-decoration: none;
-    font-weight: 500;
-}
-
-.bot-message a:hover {
-    text-decoration: underline;
-}
-
-.bot-message ul,
-.bot-message ol {
-    margin: 10px 0;
-    padding-left: 25px;
-}
-
-.bot-message li {
-    margin: 5px 0;
-    line-height: 1.5;
-}
-
-.bot-message strong,
-.bot-message b {
-    font-weight: 600;
-    color: #333;
-}
-
-.bot-message em,
-.bot-message i {
-    font-style: italic;
-}
-
-.bot-message code {
-    background-color: #f5f5f5;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: monospace;
-    font-size: 13px;
-}
-
-.bot-message pre {
-    background-color: #f5f5f5;
-    padding: 10px;
-    border-radius: 5px;
-    overflow-x: auto;
-    margin: 10px 0;
-}
-
-.bot-message pre code {
-    background: none;
-    padding: 0;
-}
-
-.bot-message blockquote {
-    border-left: 3px solid #268CCD;
-    padding-left: 15px;
-    margin: 10px 0;
-    color: #666;
-    font-style: italic;
 }

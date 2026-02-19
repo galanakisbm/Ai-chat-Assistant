@@ -6,14 +6,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const inputField = document.getElementById('optic-chat-input');
     const messagesArea = document.getElementById('optic-chat-messages');
 
-    // Configure marked.js once at startup
-    if (typeof marked !== 'undefined' && marked.setOptions) {
-        marked.setOptions({
-            breaks: true,  // Convert \n to <br>
-            gfm: true      // GitHub Flavored Markdown
-        });
-    }
-
     // 1. Load History on Start
     loadChatState();
 
@@ -132,32 +124,82 @@ document.addEventListener('DOMContentLoaded', function() {
         return context;
     }
 
-    function addMessageToChat(text, className) {
-        createMessageElement(text, className);
-        saveMessageToStorage(text, className);
+    function addMessageToChat(data, className) {
+        if (className === 'bot-message') {
+            createBotMessage(data);
+        } else {
+            createUserMessage(data);
+        }
+        saveMessageToStorage(data, className);
         scrollToBottom();
+    }
+
+    function createUserMessage(text) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'message user-message';
+        msgDiv.textContent = text;
+        messagesArea.appendChild(msgDiv);
+    }
+
+    function createBotMessage(data) {
+        const container = document.createElement('div');
+        container.className = 'message bot-message';
+        
+        // Handle different response types
+        if (typeof data === 'string') {
+            // Legacy plain text
+            container.innerHTML = escapeHtml(data);
+        } else if (data.type === 'text') {
+            // Simple text response
+            container.innerHTML = escapeHtml(data.content);
+        } else if (data.type === 'mixed') {
+            // Mixed content (text + products)
+            data.content.forEach(item => {
+                if (item.type === 'text') {
+                    const textDiv = document.createElement('div');
+                    textDiv.className = 'bot-text';
+                    textDiv.innerHTML = escapeHtml(item.text);
+                    container.appendChild(textDiv);
+                } else if (item.type === 'product') {
+                    const productCard = createProductCard(item);
+                    container.appendChild(productCard);
+                }
+            });
+        }
+        
+        messagesArea.appendChild(container);
+    }
+
+    function createProductCard(product) {
+        const card = document.createElement('div');
+        card.className = 'product-card';
+        card.innerHTML = `
+            <div class="product-image">
+                <img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}" 
+                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\'%3E%3Crect fill=\\'%23f0f0f0\\' width=\\'100\\' height=\\'100\\'/%3E%3Ctext x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\' fill=\\'%23999\\'%3ENo Image%3C/text%3E%3C/svg%3E'">
+            </div>
+            <div class="product-info">
+                <h4 class="product-name">${escapeHtml(product.name)}</h4>
+                <div class="product-price">${escapeHtml(product.price)}€</div>
+                <a href="${escapeHtml(product.url)}" target="_blank" class="product-link">
+                    Δείτε το προϊόν →
+                </a>
+            </div>
+        `;
+        return card;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     function createMessageElement(text, className) {
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message ' + className;
         msgDiv.id = 'msg-' + Date.now() + Math.random(); 
-        
-        // Αν είναι bot message και το marked.js έχει φορτώσει, κάνε parse το Markdown
-        if (className.includes('bot-message') && typeof marked !== 'undefined') {
-            // Parse Markdown to HTML
-            const html = marked.parse(text);
-            
-            // Sanitize with DOMPurify if available (defense in depth)
-            if (typeof DOMPurify !== 'undefined') {
-                msgDiv.innerHTML = DOMPurify.sanitize(html);
-            } else {
-                msgDiv.innerHTML = html;
-            }
-        } else {
-            msgDiv.innerHTML = text;
-        }
-        
+        msgDiv.textContent = text;
         messagesArea.appendChild(msgDiv);
         return msgDiv.id;
     }
@@ -166,8 +208,12 @@ document.addEventListener('DOMContentLoaded', function() {
         messagesArea.scrollTop = messagesArea.scrollHeight;
     }
 
-    function saveMessageToStorage(text, className) {
+    function saveMessageToStorage(data, className) {
         let history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
+        // Store simplified version for history context
+        const text = typeof data === 'string' ? data : 
+                     data.type === 'text' ? data.content : 
+                     JSON.stringify(data);
         history.push({ text: text, class: className });
         if (history.length > 50) history = history.slice(-50);
         localStorage.setItem('optic_chat_history', JSON.stringify(history));
@@ -181,7 +227,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         const history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
-        history.forEach(msg => createMessageElement(msg.text, msg.class));
+        history.forEach(msg => {
+            // Load stored messages (may be old format)
+            if (msg.class === 'bot-message') {
+                try {
+                    const data = typeof msg.text === 'string' && msg.text.startsWith('{') ? 
+                                JSON.parse(msg.text) : msg.text;
+                    createBotMessage(data);
+                } catch (e) {
+                    createBotMessage(msg.text);
+                }
+            } else {
+                createUserMessage(msg.text);
+            }
+        });
         
         if (history.length === 0) {
              addMessageToChat("Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω;", "bot-message");
