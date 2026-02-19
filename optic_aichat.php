@@ -75,7 +75,7 @@ class Optic_AiChat extends Module
             `id_conversation` INT AUTO_INCREMENT PRIMARY KEY,
             `id_customer` INT DEFAULT NULL,
             `user_message` TEXT,
-            `bot_response` TEXT,
+            `bot_response` MEDIUMTEXT,
             `products_mentioned` VARCHAR(255) DEFAULT NULL,
             `response_time` FLOAT DEFAULT 0,
             `detected_language` VARCHAR(5) DEFAULT NULL,
@@ -1164,10 +1164,11 @@ class Optic_AiChat extends Module
     {
         $idLang = (int)Context::getContext()->language->id;
         
-        $sql = 'SELECT meta_title, content
-                FROM ' . _DB_PREFIX_ . 'cms_lang
-                WHERE id_lang = ' . $idLang . '
-                AND active = 1
+        $sql = 'SELECT cl.meta_title, cl.content
+                FROM ' . _DB_PREFIX_ . 'cms_lang cl
+                INNER JOIN ' . _DB_PREFIX_ . 'cms c ON cl.id_cms = c.id_cms
+                WHERE cl.id_lang = ' . $idLang . '
+                AND c.active = 1
                 LIMIT 5';
         
         $pages = Db::getInstance()->executeS($sql);
@@ -1310,7 +1311,7 @@ class Optic_AiChat extends Module
     private function getAnalyticsStats()
     {
         $sql = 'SELECT 
-                    COUNT(DISTINCT DATE(date_add)) as total_conversations,
+                    COUNT(DISTINCT id_customer) as total_conversations,
                     COUNT(*) as total_messages,
                     AVG(response_time) as avg_response_time,
                     COUNT(*) / GREATEST(COUNT(DISTINCT DATE(date_add)), 1) as avg_messages_per_conv

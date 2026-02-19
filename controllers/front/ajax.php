@@ -568,7 +568,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 VALUES (
                     ' . (int)$idCustomer . ',
                     "' . pSQL($userMessage, true) . '",
-                    "' . pSQL(mb_substr($botResponse, 0, 1000), true) . '",
+                    "' . pSQL($botResponse, true) . '",
                     "' . pSQL($productsMentioned) . '",
                     ' . (float)$responseTime . ',
                     "' . pSQL($detectedLang) . '",
@@ -580,17 +580,48 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
 
     private function extractProductMentions($text)
     {
-        // Simple keyword extraction
-        $keywords = ['μπλούζα', 't-shirt', 'shirt', 'κούπα', 'mug', 'notebook', 'έκπτωση', 'sale', 
-                     'προσφορά', 'discount', 'ρούχα', 'clothes', 'παπούτσια', 'shoes', 
-                     'τσάντα', 'bag', 'φόρεμα', 'dress'];
         $found = [];
-        
         $textLower = mb_strtolower($text);
         
-        foreach ($keywords as $keyword) {
-            if (stripos($textLower, $keyword) !== false) {
-                $found[] = $keyword;
+        // Try to get keywords from products cache
+        $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
+        
+        if (file_exists($cacheFile)) {
+            $products = json_decode(file_get_contents($cacheFile), true);
+            if ($products && is_array($products)) {
+                foreach ($products as $product) {
+                    // Check if product title appears in text
+                    $titleLower = mb_strtolower($product['title']);
+                    if (stripos($textLower, $titleLower) !== false) {
+                        $found[] = $product['title'];
+                    }
+                    
+                    // Check if category appears in text
+                    if (!empty($product['category'])) {
+                        $categoryLower = mb_strtolower($product['category']);
+                        if (stripos($textLower, $categoryLower) !== false) {
+                            $found[] = $product['category'];
+                        }
+                    }
+                    
+                    // Limit to avoid huge strings
+                    if (count($found) >= 10) {
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Fallback to common keywords if no products found
+        if (empty($found)) {
+            $keywords = ['μπλούζα', 't-shirt', 'shirt', 'κούπα', 'mug', 'notebook', 'έκπτωση', 'sale', 
+                         'προσφορά', 'discount', 'ρούχα', 'clothes', 'παπούτσια', 'shoes', 
+                         'τσάντα', 'bag', 'φόρεμα', 'dress'];
+            
+            foreach ($keywords as $keyword) {
+                if (stripos($textLower, $keyword) !== false) {
+                    $found[] = $keyword;
+                }
             }
         }
         
