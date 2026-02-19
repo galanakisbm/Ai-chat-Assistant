@@ -18,6 +18,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
 
         $userMessage = Tools::getValue('message');
         $historyJson = Tools::getValue('history'); 
+        $pageContextJson = Tools::getValue('page_context');
         $apiKey = Configuration::get('OPTIC_AICHAT_API_KEY');
         
         if (empty($apiKey)) {
@@ -28,7 +29,12 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             $this->returnJson(['status' => 'error', 'reply' => 'Empty message.']);
         }
 
-        $response = $this->handleOpenAIConversation($userMessage, $historyJson, $apiKey);
+        $startTime = microtime(true);
+        $response = $this->handleOpenAIConversation($userMessage, $historyJson, $pageContextJson, $apiKey);
+        $responseTime = microtime(true) - $startTime;
+
+        // Log the conversation
+        $this->logConversation($userMessage, $response, $pageContextJson, $responseTime);
 
         $this->returnJson([
             'status' => 'success',
@@ -42,10 +48,33 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         die(json_encode($data));
     }
 
-    private function handleOpenAIConversation($userMessage, $historyJson, $apiKey)
+    private function handleOpenAIConversation($userMessage, $historyJson, $pageContextJson, $apiKey)
     {
         $history = json_decode(html_entity_decode($historyJson), true);
         $id_lang = Context::getContext()->language->id;
+
+        // Handle Page Context
+        $pageContext = '';
+        if (Configuration::get('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT') && !empty($pageContextJson)) {
+            $pageData = json_decode($pageContextJson, true);
+            if ($pageData) {
+                $pageContext = "\n\n=== CURRENT PAGE INFORMATION ===\n";
+                $pageContext .= "Page Type: " . $pageData['type'] . "\n";
+                $pageContext .= "Page URL: " . $pageData['url'] . "\n";
+                $pageContext .= "Page Title: " . $pageData['title'] . "\n";
+                
+                if (isset($pageData['productName'])) {
+                    $pageContext .= "Product: " . $pageData['productName'] . "\n";
+                    $pageContext .= "Price: " . $pageData['productPrice'] . "\n";
+                }
+                if (isset($pageData['categoryName'])) {
+                    $pageContext .= "Category: " . $pageData['categoryName'] . "\n";
+                }
+                
+                $pageContext .= "User is currently viewing this page. Use this context to provide relevant assistance.\n";
+                $pageContext .= "===================================\n";
+            }
+        }
 
         // Ορισμός εργαλείων (Tools)
         $tools = [
@@ -95,7 +124,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             ]
         ];
 
-        // System Prompt - Εδώ δίνουμε στο AI τη λίστα με τις CMS σελίδες για να ξέρει ποια να ζητήσει
+        // System Prompt - Enhanced with better instructions
         $cmsPages = CMS::getCMSPages($id_lang);
         $cmsList = "";
         foreach ($cmsPages as $cp) {
@@ -106,9 +135,17 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         
         $systemInstruction = $basePrompt . 
         " You MUST answer in Greek (Ελληνικά). " .
-        " You have access to store information through CMS pages. Available CMS pages:\n" . $cmsList .
-        " If the user asks about shipping, returns, or store info, use 'get_cms_page_content' with the correct ID. " .
-        " When listing products, use the specified HTML structure with images.";
+        " You are a professional e-commerce assistant. Be friendly, concise, and helpful. " .
+        " IMPORTANT RULES:\n" .
+        " - Always greet warmly\n" .
+        " - When showing products, present them in a structured HTML format with images\n" .
+        " - Suggest related products when appropriate\n" .
+        " - If asked about policies (shipping, returns), use get_cms_page_content\n" .
+        " - For product searches, use broad keywords and context\n" .
+        " - Keep responses under 200 words unless showing product lists\n" .
+        " - Use emojis sparingly for friendliness (✨, 🛍️, 📦, ✅)\n" .
+        " Available CMS pages:\n" . $cmsList .
+        ($pageContext ? "\n\nCURRENT PAGE CONTEXT:\n" . $pageContext : "");
 
         // Build History Context
         $messages = [['role' => 'system', 'content' => $systemInstruction]];
@@ -219,7 +256,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                     'image' => $imagePath,
                     'description' => strip_tags($productObj->description_short), 
                     'features' => implode(", ", $feats),
-                    'variants' => $variantsText,
+                    'variants' => $varsText,
                     'stock' => StockAvailable::getQuantityAvailableByProduct($row['id_product'], 0) > 0 ? 'In Stock' : 'Out of Stock'
                 ];
             }
@@ -244,5 +281,34 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         $data = [];
         foreach ($rules as $r) { $data[] = ['name' => $r['name'], 'code' => $r['code'], 'reduction' => $r['reduction_percent'] > 0 ? $r['reduction_percent'].'%' : $r['reduction_amount'].'€']; }
         return $data;
+    }
+
+    /**
+     * Log conversation to database
+     */
+    private function logConversation($message, $response, $pageContextJson, $responseTime)
+    {
+        $context = Context::getContext();
+        $pageData = json_decode($pageContextJson, true);
+        
+        $sessionId = session_id();
+        if (empty($sessionId)) {
+            $sessionId = md5(uniqid(rand(), true));
+        }
+
+        $sql = 'INSERT INTO `' . _DB_PREFIX_ . 'optic_aichat_logs` 
+                (`id_customer`, `message`, `response`, `page_url`, `page_context`, `session_id`, `date_add`, `response_time`)
+                VALUES (
+                    ' . ($context->customer->isLogged() ? (int)$context->customer->id : 'NULL') . ',
+                    "' . pSQL($message) . '",
+                    "' . pSQL(strip_tags($response)) . '",
+                    "' . pSQL($pageData['url'] ?? '') . '",
+                    "' . pSQL(json_encode($pageData)) . '",
+                    "' . pSQL($sessionId) . '",
+                    NOW(),
+                    ' . (float)$responseTime . '
+                )';
+        
+        Db::getInstance()->execute($sql);
     }
 }
