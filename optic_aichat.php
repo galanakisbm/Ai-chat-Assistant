@@ -109,6 +109,9 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_XML_PATH');
         Configuration::deleteByName('OPTIC_AICHAT_PRODUCTS_INDEXED');
         Configuration::deleteByName('OPTIC_AICHAT_XML_FIELD_MAPPING');
+        Configuration::deleteByName('OPTIC_AICHAT_XML_FIELDS');
+        Configuration::deleteByName('OPTIC_AICHAT_XML_SAMPLE');
+        Configuration::deleteByName('OPTIC_AICHAT_PRODUCTS_COUNT');
         
         // Διαγραφή πίνακα chat logs
         $sql = "DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`";
@@ -124,7 +127,31 @@ class Optic_AiChat extends Module
     {
         $output = '';
 
-        // Έλεγχος αν πατήθηκε το Save
+        // Step 1: Handle XML Upload First
+        if (Tools::isSubmit('uploadXML')) {
+            if (isset($_FILES['OPTIC_AICHAT_PRODUCT_FEED']) && $_FILES['OPTIC_AICHAT_PRODUCT_FEED']['size'] > 0) {
+                $uploadResult = $this->handleXMLUpload($_FILES['OPTIC_AICHAT_PRODUCT_FEED']);
+                
+                if ($uploadResult['success']) {
+                    // Auto-suggest mappings
+                    $autoSuggestions = $this->autoSuggestMapping($uploadResult['available_fields']);
+                    
+                    // Save auto-suggestions as initial mapping
+                    Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($autoSuggestions));
+                    
+                    $output .= $this->displayConfirmation(
+                        $this->l('XML uploaded successfully!') . '<br>' .
+                        $this->l('Products found:') . ' ' . $uploadResult['products_count'] . '<br>' .
+                        $this->l('Fields detected:') . ' ' . count($uploadResult['available_fields']) . '<br>' .
+                        $this->l('Auto-mapping applied. Please review below.')
+                    );
+                } else {
+                    $output .= $this->displayError($uploadResult['error']);
+                }
+            }
+        }
+
+        // Step 2: Handle Settings and Field Mapping Save
         if (Tools::isSubmit('submitOpticAiChat')) {
             $apiKey = Tools::getValue('OPTIC_AICHAT_API_KEY');
             $prompt = Tools::getValue('OPTIC_AICHAT_SYSTEM_PROMPT');
@@ -132,7 +159,7 @@ class Optic_AiChat extends Module
             $enablePageContext = Tools::getValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
             $pageContextTemplate = Tools::getValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
             
-            // NEW: Color values
+            // Color values
             $primaryColor = Tools::getValue('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD';
             $secondaryColor = Tools::getValue('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
             $buttonTextColor = Tools::getValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
@@ -152,29 +179,57 @@ class Optic_AiChat extends Module
                 Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', $buttonTextColor);
 
                 // Save field mappings
-                $defaultMappings = $this->getDefaultFieldMappings();
-                $fieldMappings = [];
-                foreach ($defaultMappings as $key => $default) {
-                    $fieldMappings[$key] = Tools::getValue('XML_FIELD_' . $key) ?: $default;
+                $fieldMappings = [
+                    'product_id' => Tools::getValue('XML_FIELD_product_id'),
+                    'title' => Tools::getValue('XML_FIELD_title'),
+                    'description' => Tools::getValue('XML_FIELD_description'),
+                    'short_description' => Tools::getValue('XML_FIELD_short_description'),
+                    'category' => Tools::getValue('XML_FIELD_category'),
+                    'price_sale' => Tools::getValue('XML_FIELD_price_sale'),
+                    'price_regular' => Tools::getValue('XML_FIELD_price_regular'),
+                    'onsale' => Tools::getValue('XML_FIELD_onsale'),
+                    'sizes' => Tools::getValue('XML_FIELD_sizes'),
+                    'composition' => Tools::getValue('XML_FIELD_composition'),
+                    'dimensions' => Tools::getValue('XML_FIELD_dimensions'),
+                    'instock' => Tools::getValue('XML_FIELD_instock'),
+                    'url' => Tools::getValue('XML_FIELD_url'),
+                    'image' => Tools::getValue('XML_FIELD_image'),
+                ];
+
+                // Remove empty mappings
+                $fieldMappings = array_filter($fieldMappings);
+
+                // Validate required mappings
+                $requiredFields = ['product_id', 'title', 'price_sale', 'url', 'image'];
+                $missingFields = [];
+
+                foreach ($requiredFields as $required) {
+                    if (empty($fieldMappings[$required])) {
+                        $missingFields[] = $required;
+                    }
+                }
+
+                if (!empty($missingFields)) {
+                    $output .= $this->displayWarning(
+                        $this->l('Warning: Required fields not mapped:') . ' ' . 
+                        implode(', ', $missingFields)
+                    );
                 }
 
                 Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($fieldMappings));
 
-                // Handle XML upload
-                if (isset($_FILES['OPTIC_AICHAT_PRODUCT_FEED']) && $_FILES['OPTIC_AICHAT_PRODUCT_FEED']['size'] > 0) {
-                    $uploadResult = $this->handleXMLUpload($_FILES['OPTIC_AICHAT_PRODUCT_FEED']);
-                    if ($uploadResult) {
-                        $productsIndexed = Configuration::get('OPTIC_AICHAT_PRODUCTS_INDEXED');
-                        $output .= $this->displayConfirmation(
-                            $this->l('XML uploaded and indexed successfully!') . ' ' . 
-                            $productsIndexed . ' ' . $this->l('products found.')
-                        );
-                    } else {
-                        $output .= $this->displayError($this->l('Failed to upload XML file. Please check file format.'));
-                    }
+                // Re-index products with new mapping
+                $xmlPath = Configuration::get('OPTIC_AICHAT_XML_PATH');
+                if ($xmlPath && file_exists($xmlPath)) {
+                    $this->indexXMLProducts($xmlPath);
+                    $productsIndexed = Configuration::get('OPTIC_AICHAT_PRODUCTS_INDEXED');
+                    $output .= $this->displayConfirmation(
+                        $this->l('Settings saved!') . '<br>' .
+                        $this->l('Products indexed:') . ' ' . $productsIndexed
+                    );
+                } else {
+                    $output .= $this->displayConfirmation($this->l('Οι ρυθμίσεις αποθηκεύτηκαν.'));
                 }
-                
-                $output .= $this->displayConfirmation($this->l('Οι ρυθμίσεις αποθηκεύτηκαν.'));
             }
         }
 
@@ -186,6 +241,11 @@ class Optic_AiChat extends Module
      */
     public function renderForm()
     {
+        // Get available XML fields (if XML uploaded)
+        $availableFields = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELDS'), true) ?: [];
+        $sampleProduct = json_decode(Configuration::get('OPTIC_AICHAT_XML_SAMPLE'), true) ?: [];
+        $currentMapping = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true) ?: [];
+
         // Main settings form
         $fields_form = [
             'form' => [
@@ -235,7 +295,6 @@ class Optic_AiChat extends Module
                         'desc' => $this->l('Template for page information. Available variables: {PAGE_TITLE}, {PAGE_URL}, {PAGE_TYPE}, {PRODUCT_NAME}, {PRODUCT_PRICE}, {CATEGORY_NAME}'),
                         'required' => false
                     ],
-                    // NEW: Color Customization
                     [
                         'type' => 'color',
                         'label' => $this->l('Primary Color'),
@@ -256,141 +315,6 @@ class Optic_AiChat extends Module
                         'name' => 'OPTIC_AICHAT_BUTTON_TEXT_COLOR',
                         'desc' => $this->l('Text color on buttons (white/black)'),
                         'size' => 20,
-                    ],
-                    // NEW: XML Product Feed
-                    [
-                        'type' => 'file',
-                        'label' => $this->l('Product Feed (XML)'),
-                        'name' => 'OPTIC_AICHAT_PRODUCT_FEED',
-                        'desc' => $this->l('Upload XML file with products for faster search (optional)'),
-                    ],
-                ],
-                'submit' => [
-                    'title' => $this->l('Αποθήκευση'),
-                ],
-            ],
-        ];
-
-        // XML Field Mapping Form
-        $mapping_form = [
-            'form' => [
-                'legend' => [
-                    'title' => $this->l('XML Field Mapping'),
-                    'icon' => 'icon-list',
-                ],
-                'description' => $this->l('Map your XML fields to module fields. This allows you to use any XML format.'),
-                'input' => [
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Product ID'),
-                        'name' => 'XML_FIELD_product_id',
-                        'desc' => $this->l('XML tag for product ID'),
-                        'placeholder' => 'id',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Title'),
-                        'name' => 'XML_FIELD_title',
-                        'desc' => $this->l('XML tag for product title'),
-                        'placeholder' => 'name',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Description'),
-                        'name' => 'XML_FIELD_description',
-                        'desc' => $this->l('XML tag for full description'),
-                        'placeholder' => 'description',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Short Description'),
-                        'name' => 'XML_FIELD_short_description',
-                        'desc' => $this->l('XML tag for short description'),
-                        'placeholder' => 'short_description',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Main Category'),
-                        'name' => 'XML_FIELD_category',
-                        'desc' => $this->l('XML tag for category'),
-                        'placeholder' => 'category',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Price (with discount)'),
-                        'name' => 'XML_FIELD_price_sale',
-                        'desc' => $this->l('XML tag for sale price'),
-                        'placeholder' => 'price',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Price (without discount)'),
-                        'name' => 'XML_FIELD_price_regular',
-                        'desc' => $this->l('XML tag for regular price'),
-                        'placeholder' => 'regular_price',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('On Sale (1/0 or Y/N)'),
-                        'name' => 'XML_FIELD_onsale',
-                        'desc' => $this->l('XML tag for on-sale status'),
-                        'placeholder' => 'onsale',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Sizes (comma-separated)'),
-                        'name' => 'XML_FIELD_sizes',
-                        'desc' => $this->l('XML tag for sizes'),
-                        'placeholder' => 'size',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Composition'),
-                        'name' => 'XML_FIELD_composition',
-                        'desc' => $this->l('XML tag for composition/material'),
-                        'placeholder' => 'composition',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Dimensions (comma-separated)'),
-                        'name' => 'XML_FIELD_dimensions',
-                        'desc' => $this->l('XML tag for dimensions'),
-                        'placeholder' => 'dimension',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('In Stock (Y/N or 1/0)'),
-                        'name' => 'XML_FIELD_instock',
-                        'desc' => $this->l('XML tag for stock status'),
-                        'placeholder' => 'instock',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Product URL'),
-                        'name' => 'XML_FIELD_url',
-                        'desc' => $this->l('XML tag for product URL'),
-                        'placeholder' => 'url',
-                        'size' => 30,
-                    ],
-                    [
-                        'type' => 'text',
-                        'label' => $this->l('Image URL'),
-                        'name' => 'XML_FIELD_image',
-                        'desc' => $this->l('XML tag for product image'),
-                        'placeholder' => 'image',
-                        'size' => 30,
                     ],
                 ],
                 'submit' => [
@@ -422,14 +346,261 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_BUTTON_TEXT_COLOR'] = Configuration::get('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
 
         // Load field mappings
-        $mappings = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true);
-        if ($mappings) {
-            foreach ($mappings as $key => $value) {
+        if (!empty($currentMapping)) {
+            foreach ($currentMapping as $key => $value) {
                 $helper->fields_value['XML_FIELD_' . $key] = $value;
             }
         }
 
-        return $helper->generateForm([$fields_form, $mapping_form]);
+        // XML Upload Form (Separate)
+        $xml_upload_html = '
+        <div class="panel">
+            <div class="panel-heading">
+                <i class="icon-upload"></i> ' . $this->l('Step 1: Upload Product XML Feed') . '
+            </div>
+            <div class="panel-body">
+                <p>' . $this->l('Upload your products XML file. The system will automatically detect available fields.') . '</p>
+                <form method="post" enctype="multipart/form-data" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '">
+                    <div class="form-group">
+                        <label>' . $this->l('Select XML File') . '</label>
+                        <input type="file" name="OPTIC_AICHAT_PRODUCT_FEED" accept=".xml" required>
+                    </div>
+                    <button type="submit" name="uploadXML" class="btn btn-primary">
+                        <i class="icon-upload"></i> ' . $this->l('Upload & Detect Fields') . '
+                    </button>
+                </form>
+            </div>
+        </div>';
+
+        // Preview panel
+        $preview_html = '';
+        if (!empty($sampleProduct)) {
+            $preview_html = '
+            <div class="panel">
+                <div class="panel-heading">
+                    <i class="icon-eye"></i> ' . $this->l('Preview: First Product') . '
+                </div>
+                <div class="panel-body">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>' . $this->l('XML Tag') . '</th>
+                                <th>' . $this->l('Value') . '</th>
+                            </tr>
+                        </thead>
+                        <tbody>';
+            
+            foreach ($sampleProduct as $tag => $value) {
+                $preview_html .= '
+                            <tr>
+                                <td><code>&lt;' . htmlspecialchars($tag) . '&gt;</code></td>
+                                <td>' . htmlspecialchars(mb_substr($value, 0, 100)) . (mb_strlen($value) > 100 ? '...' : '') . '</td>
+                            </tr>';
+            }
+            
+            $preview_html .= '
+                        </tbody>
+                    </table>
+                </div>
+            </div>';
+        }
+
+        // Field Mapping Form (only show if XML uploaded)
+        $mapping_form_html = '';
+        
+        if (!empty($availableFields)) {
+            // Create dropdown options
+            $fieldOptions = [['value' => '', 'label' => $this->l('-- Select Field --')]];
+            foreach ($availableFields as $field) {
+                $fieldOptions[] = ['value' => $field, 'label' => '<' . $field . '>'];
+            }
+
+            $mapping_form = [
+                'form' => [
+                    'legend' => [
+                        'title' => $this->l('Step 2: Map XML Fields'),
+                        'icon' => 'icon-list',
+                    ],
+                    'description' => sprintf(
+                        $this->l('Found %d products with %d available fields. Map your XML tags to module fields below.'),
+                        (int)Configuration::get('OPTIC_AICHAT_PRODUCTS_COUNT'),
+                        count($availableFields)
+                    ),
+                    'input' => [
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Product ID') . ' <span style="color:red;">*</span>',
+                            'name' => 'XML_FIELD_product_id',
+                            'desc' => $this->l('Unique product identifier'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Title') . ' <span style="color:red;">*</span>',
+                            'name' => 'XML_FIELD_title',
+                            'desc' => $this->l('Product name/title'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Description'),
+                            'name' => 'XML_FIELD_description',
+                            'desc' => $this->l('Full product description'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Short Description'),
+                            'name' => 'XML_FIELD_short_description',
+                            'desc' => $this->l('Brief product description'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Category'),
+                            'name' => 'XML_FIELD_category',
+                            'desc' => $this->l('Product category'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Price (with discount)') . ' <span style="color:red;">*</span>',
+                            'name' => 'XML_FIELD_price_sale',
+                            'desc' => $this->l('Current selling price'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Price (without discount)'),
+                            'name' => 'XML_FIELD_price_regular',
+                            'desc' => $this->l('Original/regular price'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('On Sale (1/0 or Y/N)'),
+                            'name' => 'XML_FIELD_onsale',
+                            'desc' => $this->l('Is product on sale?'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Sizes (comma-separated)'),
+                            'name' => 'XML_FIELD_sizes',
+                            'desc' => $this->l('Available sizes (S,M,L,XL)'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Composition/Material'),
+                            'name' => 'XML_FIELD_composition',
+                            'desc' => $this->l('Product material/composition'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Dimensions'),
+                            'name' => 'XML_FIELD_dimensions',
+                            'desc' => $this->l('Product dimensions'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('In Stock (Y/N or 1/0)'),
+                            'name' => 'XML_FIELD_instock',
+                            'desc' => $this->l('Stock availability'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Product URL') . ' <span style="color:red;">*</span>',
+                            'name' => 'XML_FIELD_url',
+                            'desc' => $this->l('Link to product page'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                        [
+                            'type' => 'select',
+                            'label' => $this->l('Image URL') . ' <span style="color:red;">*</span>',
+                            'name' => 'XML_FIELD_image',
+                            'desc' => $this->l('Product image URL'),
+                            'options' => [
+                                'query' => $fieldOptions,
+                                'id' => 'value',
+                                'name' => 'label'
+                            ],
+                        ],
+                    ],
+                    'submit' => [
+                        'title' => $this->l('Save Mapping & Index Products'),
+                    ],
+                ],
+            ];
+
+            $mappingForm = $helper->generateForm([$mapping_form]);
+        }
+
+        $mainForm = $helper->generateForm([$fields_form]);
+        
+        if (!empty($availableFields)) {
+            return $mainForm . $xml_upload_html . $preview_html . $mappingForm;
+        } else {
+            return $mainForm . $xml_upload_html . '
+            <div class="alert alert-info">
+                <i class="icon-info"></i> ' . $this->l('Upload an XML file to enable field mapping.') . '
+            </div>';
+        }
     }
 
     public function hookDisplayHeader()
@@ -501,7 +672,7 @@ class Optic_AiChat extends Module
     }
 
     /**
-     * Handle XML file upload
+     * Handle XML file upload with auto-detection
      */
     private function handleXMLUpload($file)
     {
@@ -511,20 +682,121 @@ class Optic_AiChat extends Module
             mkdir($uploadDir, 0755, true);
         }
 
-        if ($file['type'] === 'text/xml' || $file['type'] === 'application/xml') {
-            $targetFile = $uploadDir . 'products.xml';
+        // Validate XML
+        if ($file['type'] !== 'text/xml' && $file['type'] !== 'application/xml') {
+            return ['success' => false, 'error' => 'Invalid file type. Please upload an XML file.'];
+        }
+
+        $targetFile = $uploadDir . 'products.xml';
+        
+        if (move_uploaded_file($file['tmp_name'], $targetFile)) {
+            Configuration::updateValue('OPTIC_AICHAT_XML_PATH', $targetFile);
             
-            if (move_uploaded_file($file['tmp_name'], $targetFile)) {
-                Configuration::updateValue('OPTIC_AICHAT_XML_PATH', $targetFile);
-                
-                // Parse and cache the XML
-                $this->indexXMLProducts($targetFile);
-                
-                return true;
+            // Auto-detect XML structure
+            $detectionResult = $this->detectXMLStructure($targetFile);
+            
+            if ($detectionResult['success']) {
+                return [
+                    'success' => true,
+                    'products_count' => $detectionResult['products_count'],
+                    'available_fields' => $detectionResult['available_fields'],
+                    'sample_product' => $detectionResult['sample_product'],
+                ];
+            } else {
+                return ['success' => false, 'error' => 'Failed to parse XML structure.'];
             }
         }
         
-        return false;
+        return ['success' => false, 'error' => 'Failed to upload file.'];
+    }
+
+    /**
+     * Detect XML structure and extract available fields
+     */
+    private function detectXMLStructure($xmlPath)
+    {
+        try {
+            $xml = simplexml_load_file($xmlPath, 'SimpleXMLElement', LIBXML_NOCDATA);
+            
+            if ($xml === false) {
+                return ['success' => false, 'error' => 'Failed to parse XML file. Please check that the file is valid XML.'];
+            }
+            
+            if (!isset($xml->product)) {
+                return ['success' => false, 'error' => 'No <product> elements found in XML. Please ensure your XML contains <product> tags.'];
+            }
+            
+            $productsCount = count($xml->product);
+            
+            // Ensure at least one product exists
+            if ($productsCount === 0) {
+                return ['success' => false, 'error' => 'No products found in XML file.'];
+            }
+            
+            $availableFields = [];
+            $sampleProduct = [];
+            
+            // Get first product to detect structure
+            $firstProduct = $xml->product[0];
+            
+            // Extract all child tags
+            foreach ($firstProduct->children() as $tag => $value) {
+                $availableFields[] = $tag;
+                $sampleProduct[$tag] = (string)$value;
+            }
+            
+            // Save detection results
+            Configuration::updateValue('OPTIC_AICHAT_XML_FIELDS', json_encode($availableFields));
+            Configuration::updateValue('OPTIC_AICHAT_XML_SAMPLE', json_encode($sampleProduct));
+            Configuration::updateValue('OPTIC_AICHAT_PRODUCTS_COUNT', $productsCount);
+            
+            return [
+                'success' => true,
+                'products_count' => $productsCount,
+                'available_fields' => $availableFields,
+                'sample_product' => $sampleProduct,
+            ];
+            
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => 'Failed to parse XML: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Auto-suggest field mappings using smart matching
+     */
+    private function autoSuggestMapping($availableFields)
+    {
+        $suggestions = [];
+        
+        // Smart matching rules
+        $rules = [
+            'product_id' => ['id', 'product_id', 'sku', 'product_sku', 'item_id'],
+            'title' => ['name', 'title', 'product_name', 'product_title', 'item_name'],
+            'description' => ['description', 'desc', 'full_description', 'long_desc', 'details', 'full_desc'],
+            'short_description' => ['short_description', 'short_desc', 'summary', 'brief', 'brief_desc'],
+            'category' => ['category', 'categories', 'cat', 'product_category', 'main_category'],
+            'price_sale' => ['price', 'sale_price', 'current_price', 'selling_price', 'final_price'],
+            'price_regular' => ['regular_price', 'original_price', 'list_price', 'msrp', 'rrp'],
+            'onsale' => ['onsale', 'on_sale', 'is_sale', 'sale', 'discount_active', 'is_onsale'],
+            'sizes' => ['size', 'sizes', 'available_sizes', 'size_options'],
+            'composition' => ['composition', 'material', 'materials', 'fabric'],
+            'dimensions' => ['dimension', 'dimensions', 'size_dimensions', 'measurements', 'product_dimensions'],
+            'instock' => ['instock', 'in_stock', 'stock', 'availability', 'available', 'stock_status'],
+            'url' => ['url', 'link', 'product_url', 'product_link', 'permalink'],
+            'image' => ['image', 'img', 'picture', 'photo', 'image_url', 'main_image'],
+        ];
+        
+        foreach ($rules as $moduleField => $possibleTags) {
+            foreach ($possibleTags as $tag) {
+                if (in_array($tag, $availableFields)) {
+                    $suggestions[$moduleField] = $tag;
+                    break;
+                }
+            }
+        }
+        
+        return $suggestions;
     }
 
     /**
