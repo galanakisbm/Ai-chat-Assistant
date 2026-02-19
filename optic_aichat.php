@@ -421,7 +421,7 @@ class Optic_AiChat extends Module
             foreach ($availableFields as $field) {
                 $fieldOptions[] = [
                     'value' => $field,
-                    'label' => '<' . htmlspecialchars($field) . '>'
+                    'label' => $field
                 ];
             }
 
