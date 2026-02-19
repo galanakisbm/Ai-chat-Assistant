@@ -85,6 +85,7 @@ class Optic_AiChat extends Module
             $this->registerHook('displayFooter') &&
             Configuration::updateValue('OPTIC_AICHAT_WIDGET_TITLE', 'OpticWeb Assistant') &&
             Configuration::updateValue('OPTIC_AICHAT_SYSTEM_PROMPT', 'Είσαι ένας ευγενικός βοηθός για το κατάστημά μας. Απάντησε σύντομα και στα Ελληνικά.') &&
+            Configuration::updateValue('OPTIC_AICHAT_WELCOME_MESSAGE', 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊') &&
             Configuration::updateValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT', 1) &&
             Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', '') &&
             Configuration::updateValue('OPTIC_AICHAT_PRIMARY_COLOR', '#268CCD') &&
@@ -99,6 +100,7 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_API_KEY');
         Configuration::deleteByName('OPTIC_AICHAT_SYSTEM_PROMPT');
         Configuration::deleteByName('OPTIC_AICHAT_WIDGET_TITLE');
+        Configuration::deleteByName('OPTIC_AICHAT_WELCOME_MESSAGE');
         Configuration::deleteByName('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
         Configuration::deleteByName('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
         Configuration::deleteByName('OPTIC_AICHAT_PRIMARY_COLOR');
@@ -472,7 +474,8 @@ class Optic_AiChat extends Module
         $this->context->smarty->assign('optic_custom_css', $customCSS);
 
         Media::addJsDef([
-            'optic_chat_ajax_url' => $this->context->link->getModuleLink('optic_aichat', 'ajax')
+            'optic_chat_ajax_url' => $this->context->link->getModuleLink('optic_aichat', 'ajax'),
+            'optic_chat_welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊'
         ]);
     }
 
@@ -486,6 +489,7 @@ class Optic_AiChat extends Module
         
         $this->context->smarty->assign([
             'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE') ?: 'AI Assistant',
+            'welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊',
             'shop_logo' => $shopLogo,
             'shop_name' => $shop->name,
             'optic_custom_css' => isset($this->context->smarty->tpl_vars['optic_custom_css']) 
@@ -542,6 +546,10 @@ class Optic_AiChat extends Module
             // Get field mappings
             $mappings = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true);
             if (!$mappings) {
+                // Log warning if JSON decoding fails
+                if (Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING')) {
+                    error_log('OpticAiChat: Failed to decode XML field mappings, using defaults');
+                }
                 // Use defaults
                 $mappings = $this->getDefaultFieldMappings();
             }
@@ -574,7 +582,9 @@ class Optic_AiChat extends Module
             $result = file_put_contents($cacheFile, json_encode($products, JSON_UNESCAPED_UNICODE));
             
             if ($result === false) {
-                error_log('OpticAiChat: Failed to write products cache file');
+                $error = error_get_last();
+                error_log('OpticAiChat: Failed to write products cache file: ' . $cacheFile . 
+                         ' - Error: ' . ($error ? $error['message'] : 'Unknown'));
                 libxml_disable_entity_loader($previousValue);
                 return false;
             }

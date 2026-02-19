@@ -277,9 +277,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         if (history.length === 0) {
+            const welcomeMsg = typeof optic_chat_welcome_message !== 'undefined' 
+                ? optic_chat_welcome_message 
+                : "Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊";
             createBotMessage({
                 type: 'text',
-                content: "Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊"
+                content: welcomeMsg
             });
         }
         

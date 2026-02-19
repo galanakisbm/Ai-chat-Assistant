@@ -416,10 +416,10 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         foreach ($products as $product) {
             // Search in multiple fields
             $searchFields = array_filter([
-                $product['title'],
-                $product['description'],
-                $product['short_description'],
-                $product['category'],
+                $product['title'] ?? '',
+                $product['description'] ?? '',
+                $product['short_description'] ?? '',
+                $product['category'] ?? '',
                 $product['sizes'] ?? '',
                 $product['composition'] ?? '',
                 $product['dimensions'] ?? ''
