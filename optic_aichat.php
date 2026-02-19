@@ -1191,6 +1191,16 @@ class Optic_AiChat extends Module
      */
     private function renderAnalyticsDashboard()
     {
+        // Check if analytics table exists
+        $tableExists = Db::getInstance()->executeS("SHOW TABLES LIKE '" . _DB_PREFIX_ . "optic_aichat_analytics'");
+
+        if (empty($tableExists)) {
+            return '<div class="alert alert-warning">
+                        <i class="icon-warning"></i> ' .
+                        $this->l('Analytics database not yet created. It will be created automatically when conversations start.') .
+                    '</div>';
+        }
+
         $stats = $this->getAnalyticsStats();
         $topQuestions = $this->getTopQuestions(10);
         $productMentions = $this->getTopProductMentions(10);
@@ -1417,29 +1427,40 @@ class Optic_AiChat extends Module
     private function renderTabbedForm()
     {
         $currentTab = Tools::getValue('tab', 'basic');
-        
+
+        // Validate tab value
+        $validTabs = ['basic', 'xml', 'knowledge', 'analytics'];
+        if (!in_array($currentTab, $validTabs)) {
+            $currentTab = 'basic';
+        }
+
         $tabs = [
             'basic' => $this->l('Basic Settings'),
             'xml' => $this->l('XML Product Feed'),
             'knowledge' => $this->l('Knowledge Base'),
             'analytics' => $this->l('Analytics'),
         ];
-        
+
         $html = '<div class="panel">';
-        $html .= '<ul class="nav nav-tabs">';
-        
+        $html .= '<div class="panel-heading"><i class="icon-cogs"></i> ' . $this->l('OpticWeb AI Chat Configuration') . '</div>';
+        $html .= '<ul class="nav nav-tabs" role="tablist">';
+
         foreach ($tabs as $key => $label) {
-            $active = ($currentTab == $key) ? 'active' : '';
-            $html .= '<li class="' . $active . '">
-                        <a href="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&tab=' . $key . '">
+            $activeClass = ($currentTab == $key) ? 'active' : '';
+            $url = AdminController::$currentIndex .
+                   '&configure=' . $this->name .
+                   '&token=' . Tools::getAdminTokenLite('AdminModules') .
+                   '&tab=' . $key;
+            $html .= '<li class="' . $activeClass . '" role="presentation">
+                        <a href="' . $url . '" role="tab">
                             ' . $label . '
                         </a>
                       </li>';
         }
-        
+
         $html .= '</ul>';
-        $html .= '<div class="tab-content">';
-        
+        $html .= '<div class="tab-content" style="padding: 20px;">';
+
         switch ($currentTab) {
             case 'basic':
                 $html .= $this->renderBasicSettingsForm();
@@ -1453,11 +1474,13 @@ class Optic_AiChat extends Module
             case 'analytics':
                 $html .= $this->renderAnalyticsDashboard();
                 break;
+            default:
+                $html .= $this->renderBasicSettingsForm();
         }
-        
-        $html .= '</div>';
-        $html .= '</div>';
-        
+
+        $html .= '</div>'; // tab-content
+        $html .= '</div>'; // panel
+
         return $html;
     }
 
@@ -1584,8 +1607,176 @@ class Optic_AiChat extends Module
 
     private function renderXMLFeedForm()
     {
-        // This will contain the existing XML upload and field mapping forms
-        return $this->renderForm();
+        $html = '';
+
+        // Upload Section
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-upload"></i> ' . $this->l('Step 1: Upload Product XML Feed') . '</div>';
+        $html .= '<div class="panel-body">';
+        $html .= '<p>' . $this->l('Upload your products XML file. The system will automatically detect available fields.') . '</p>';
+        $html .= '<form method="post" enctype="multipart/form-data" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&tab=xml">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>' . $this->l('Select XML File') . '</label>';
+        $html .= '<input type="file" name="OPTIC_AICHAT_PRODUCT_FEED" accept=".xml" required>';
+        $html .= '</div>';
+        $html .= '<button type="submit" name="uploadXML" class="btn btn-primary">';
+        $html .= '<i class="icon-upload"></i> ' . $this->l('Upload & Detect Fields');
+        $html .= '</button>';
+
+        // Show current XML status
+        $xmlPath = Configuration::get('OPTIC_AICHAT_XML_PATH');
+        if ($xmlPath && file_exists($xmlPath)) {
+            $productsCount = Configuration::get('OPTIC_AICHAT_PRODUCTS_COUNT') ?: 0;
+            $html .= '<div class="alert alert-info" style="margin-top: 15px;">';
+            $html .= '<i class="icon-info"></i> ' . $this->l('Current XML:') . ' <strong>products.xml</strong> (' . $productsCount . ' ' . $this->l('products') . ')';
+            $html .= '</div>';
+
+            // Delete XML button
+            $html .= '<button type="submit" name="deleteXML" class="btn btn-warning" onclick="return confirm(\'' . addslashes($this->l('Delete XML and clear all product data?')) . '\');">';
+            $html .= '<i class="icon-trash"></i> ' . $this->l('Delete XML & Clear Cache');
+            $html .= '</button>';
+        }
+
+        $html .= '</form>';
+        $html .= '</div>';
+        $html .= '</div>';
+
+        // Field Mapping Section (only if XML uploaded)
+        $availableFields = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELDS'), true);
+
+        if (!empty($availableFields)) {
+            $html .= $this->renderFieldMappingForm($availableFields);
+        } else {
+            $html .= '<div class="alert alert-info">';
+            $html .= '<i class="icon-info"></i> ' . $this->l('Upload an XML file to enable field mapping.');
+            $html .= '</div>';
+        }
+
+        return $html;
+    }
+
+    private function renderFieldMappingForm($availableFields)
+    {
+        $currentMapping = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true) ?: [];
+
+        $fieldOptions = [['value' => '', 'label' => $this->l('-- Select Field --')]];
+        foreach ($availableFields as $field) {
+            $fieldOptions[] = ['value' => $field, 'label' => $field];
+        }
+
+        $fields_form = [
+            'form' => [
+                'legend' => [
+                    'title' => $this->l('Step 2: Map XML Fields'),
+                    'icon' => 'icon-list',
+                ],
+                'input' => [
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Product ID') . ' <span style="color:red;">*</span>',
+                        'name' => 'XML_FIELD_product_id',
+                        'desc' => $this->l('Unique product identifier'),
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Title') . ' <span style="color:red;">*</span>',
+                        'name' => 'XML_FIELD_title',
+                        'desc' => $this->l('Product name/title'),
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Description'),
+                        'name' => 'XML_FIELD_description',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Short Description'),
+                        'name' => 'XML_FIELD_short_description',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Category'),
+                        'name' => 'XML_FIELD_category',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Price (with discount)') . ' <span style="color:red;">*</span>',
+                        'name' => 'XML_FIELD_price_sale',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Price (without discount)'),
+                        'name' => 'XML_FIELD_price_regular',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('On Sale'),
+                        'name' => 'XML_FIELD_onsale',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Sizes'),
+                        'name' => 'XML_FIELD_sizes',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Composition'),
+                        'name' => 'XML_FIELD_composition',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Dimensions'),
+                        'name' => 'XML_FIELD_dimensions',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('In Stock'),
+                        'name' => 'XML_FIELD_instock',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Product URL') . ' <span style="color:red;">*</span>',
+                        'name' => 'XML_FIELD_url',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Image URL') . ' <span style="color:red;">*</span>',
+                        'name' => 'XML_FIELD_image',
+                        'options' => ['query' => $fieldOptions, 'id' => 'value', 'name' => 'label'],
+                    ],
+                ],
+                'submit' => [
+                    'title' => $this->l('Save Mapping & Re-Index Products'),
+                    'name' => 'submitFieldMapping',
+                ],
+            ],
+        ];
+
+        $helper = new HelperForm();
+        $helper->module = $this;
+        $helper->token = Tools::getAdminTokenLite('AdminModules');
+        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&tab=xml';
+        $helper->submit_action = 'submitFieldMapping';
+        $helper->default_form_language = (int)Configuration::get('PS_LANG_DEFAULT');
+
+        foreach ($currentMapping as $key => $value) {
+            $helper->fields_value['XML_FIELD_' . $key] = $value;
+        }
+
+        return $helper->generateForm([$fields_form]);
     }
 
     private function renderKnowledgeBaseForm()
