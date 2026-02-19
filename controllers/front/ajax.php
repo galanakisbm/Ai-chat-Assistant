@@ -30,11 +30,23 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         }
 
         $startTime = microtime(true);
+        
+        // Detect language for analytics
+        $autoDetect = Configuration::get('OPTIC_AICHAT_AUTO_LANGUAGE');
+        $fallbackLang = Configuration::get('OPTIC_AICHAT_FALLBACK_LANG') ?: 'el';
+        
+        if ($autoDetect) {
+            $detectedLang = $this->detectLanguage($userMessage);
+        } else {
+            $detectedLang = $fallbackLang;
+        }
+        
         $response = $this->handleOpenAIConversation($userMessage, $historyJson, $pageContextJson, $apiKey);
         $responseTime = microtime(true) - $startTime;
 
-        // Log the conversation
+        // Log the conversation to both tables
         $this->logConversation($userMessage, $response, $pageContextJson, $responseTime);
+        $this->logAnalytics($userMessage, $response, $responseTime, $detectedLang);
 
         // Parse AI response to structured format
         $parsedResponse = $this->parseAIResponse($response);
@@ -161,6 +173,16 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         $history = json_decode(html_entity_decode($historyJson), true);
         $id_lang = Context::getContext()->language->id;
 
+        // Detect language
+        $autoDetect = Configuration::get('OPTIC_AICHAT_AUTO_LANGUAGE');
+        $fallbackLang = Configuration::get('OPTIC_AICHAT_FALLBACK_LANG') ?: 'el';
+        
+        if ($autoDetect) {
+            $detectedLang = $this->detectLanguage($userMessage);
+        } else {
+            $detectedLang = $fallbackLang;
+        }
+
         // Handle Page Context
         $pageContext = '';
         if (Configuration::get('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT') && !empty($pageContextJson)) {
@@ -183,6 +205,12 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 $pageContext .= "===================================\n";
             }
         }
+
+        // Build dynamic context from Knowledge Base
+        $dynamicContext = $this->module->buildDynamicContext();
+        
+        // Get language instruction
+        $languageInstruction = $this->getLanguageInstruction($detectedLang);
 
         // Ορισμός εργαλείων (Tools)
         $tools = [
@@ -242,7 +270,6 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         $basePrompt = Configuration::get('OPTIC_AICHAT_SYSTEM_PROMPT') ?: "You are a helpful shopping assistant.";
         
         $systemInstruction = $basePrompt . 
-        " You MUST answer in Greek (Ελληνικά). " .
         " You are a professional e-commerce assistant. Be friendly, concise, and helpful. " .
         " IMPORTANT RESPONSE FORMAT RULES:\n" .
         " - When recommending products from search_products results, you MUST format them as:\n" .
@@ -251,12 +278,14 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         "   Example: [PRODUCT:19|Προσαρμόσιμη Κούπα|17.24|https://example.com/img.jpg|https://example.com/product]\n" .
         " - You can include multiple products, one per line\n" .
         " - When available, mention product details like sizes, dimensions, composition, and stock status in your text\n" .
-        " - Add friendly Greek text before/after products to provide context\n" .
-        " - For non-product responses, use simple, friendly Greek text\n" .
+        " - Add friendly text before/after products to provide context\n" .
+        " - For non-product responses, use simple, friendly text\n" .
         " - Available tools: search_products, get_cms_page_content, get_my_orders, get_active_offers\n" .
         " - Keep responses concise and helpful\n" .
         " Available CMS pages:\n" . $cmsList .
-        ($pageContext ? "\n\nCURRENT PAGE CONTEXT:\n" . $pageContext : "");
+        ($pageContext ? "\n\nCURRENT PAGE CONTEXT:\n" . $pageContext : "") .
+        ($dynamicContext ? "\n\nKNOWLEDGE BASE:\n" . $dynamicContext : "") .
+        $languageInstruction;
 
         // Build History Context
         $messages = [['role' => 'system', 'content' => $systemInstruction]];
@@ -302,6 +331,30 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         }
 
         return $message['content'];
+    }
+
+    private function detectLanguage($message)
+    {
+        // Greek detection (ελληνικοί χαρακτήρες)
+        if (preg_match('/[Α-Ωα-ωίϊΐόάέύϋΰήώ]/u', $message)) {
+            return 'el';
+        }
+        
+        // Add more languages if needed
+        // For now, default to English
+        return 'en';
+    }
+
+    private function getLanguageInstruction($lang)
+    {
+        switch ($lang) {
+            case 'el':
+                return "\n\nCRITICAL: You MUST respond in Greek (Ελληνικά). Use Greek characters and natural Greek language.";
+            case 'en':
+                return "\n\nCRITICAL: You MUST respond in English.";
+            default:
+                return "";
+        }
     }
 
     private function callOpenAI($messages, $tools, $apiKey)
@@ -498,5 +551,80 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 )';
         
         Db::getInstance()->execute($sql);
+    }
+
+    /**
+     * Log conversation to analytics table
+     */
+    private function logAnalytics($userMessage, $botResponse, $responseTime, $detectedLang)
+    {
+        $idCustomer = Context::getContext()->customer->id ?: null;
+        
+        // Extract product mentions (simple keyword matching)
+        $productsMentioned = $this->extractProductMentions($userMessage . ' ' . $botResponse);
+        
+        $sql = 'INSERT INTO `' . _DB_PREFIX_ . 'optic_aichat_analytics`
+                (id_customer, user_message, bot_response, products_mentioned, response_time, detected_language, date_add)
+                VALUES (
+                    ' . (int)$idCustomer . ',
+                    "' . pSQL($userMessage, true) . '",
+                    "' . pSQL($botResponse, true) . '",
+                    "' . pSQL($productsMentioned) . '",
+                    ' . (float)$responseTime . ',
+                    "' . pSQL($detectedLang) . '",
+                    NOW()
+                )';
+        
+        Db::getInstance()->execute($sql);
+    }
+
+    private function extractProductMentions($text)
+    {
+        $found = [];
+        $textLower = mb_strtolower($text);
+        
+        // Try to get keywords from products cache
+        $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
+        
+        if (file_exists($cacheFile)) {
+            $products = json_decode(file_get_contents($cacheFile), true);
+            if ($products && is_array($products)) {
+                foreach ($products as $product) {
+                    // Check if product title appears in text
+                    $titleLower = mb_strtolower($product['title']);
+                    if (strpos($textLower, $titleLower) !== false) {
+                        $found[] = $product['title'];
+                    }
+                    
+                    // Check if category appears in text
+                    if (!empty($product['category'])) {
+                        $categoryLower = mb_strtolower($product['category']);
+                        if (strpos($textLower, $categoryLower) !== false) {
+                            $found[] = $product['category'];
+                        }
+                    }
+                    
+                    // Limit to avoid huge strings
+                    if (count($found) >= 10) {
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Fallback to common keywords if no products found
+        if (empty($found)) {
+            $keywords = ['μπλούζα', 't-shirt', 'shirt', 'κούπα', 'mug', 'notebook', 'έκπτωση', 'sale', 
+                         'προσφορά', 'discount', 'ρούχα', 'clothes', 'παπούτσια', 'shoes', 
+                         'τσάντα', 'bag', 'φόρεμα', 'dress'];
+            
+            foreach ($keywords as $keyword) {
+                if (strpos($textLower, $keyword) !== false) {
+                    $found[] = $keyword;
+                }
+            }
+        }
+        
+        return implode(',', array_unique($found));
     }
 }
