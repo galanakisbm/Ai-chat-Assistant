@@ -8,6 +8,29 @@ if (!defined('_PS_VERSION_')) {
 
 class Optic_AiChat extends Module
 {
+    /**
+     * Get default XML field mappings
+     */
+    private function getDefaultFieldMappings()
+    {
+        return [
+            'title' => 'name',
+            'description' => 'description',
+            'short_description' => 'short_description',
+            'category' => 'category',
+            'price_sale' => 'price',
+            'price_regular' => 'regular_price',
+            'onsale' => 'onsale',
+            'sizes' => 'size',
+            'composition' => 'composition',
+            'dimensions' => 'dimension',
+            'instock' => 'instock',
+            'url' => 'url',
+            'image' => 'image',
+            'product_id' => 'id',
+        ];
+    }
+
     public function __construct()
     {
         $this->name = 'optic_aichat';
@@ -54,22 +77,7 @@ class Optic_AiChat extends Module
         }
         
         // Install default field mappings
-        $defaultMappings = json_encode([
-            'title' => 'name',
-            'description' => 'description',
-            'short_description' => 'short_description',
-            'category' => 'category',
-            'price_sale' => 'price',
-            'price_regular' => 'regular_price',
-            'onsale' => 'onsale',
-            'sizes' => 'size',
-            'composition' => 'composition',
-            'dimensions' => 'dimension',
-            'instock' => 'instock',
-            'url' => 'url',
-            'image' => 'image',
-            'product_id' => 'id',
-        ]);
+        $defaultMappings = json_encode($this->getDefaultFieldMappings());
         
         // Ορισμός default ρυθμίσεων κατά την εγκατάσταση
         return parent::install() &&
@@ -142,22 +150,11 @@ class Optic_AiChat extends Module
                 Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', $buttonTextColor);
 
                 // Save field mappings
-                $fieldMappings = [
-                    'product_id' => Tools::getValue('XML_FIELD_product_id') ?: 'id',
-                    'title' => Tools::getValue('XML_FIELD_title') ?: 'name',
-                    'description' => Tools::getValue('XML_FIELD_description') ?: 'description',
-                    'short_description' => Tools::getValue('XML_FIELD_short_description') ?: 'short_description',
-                    'category' => Tools::getValue('XML_FIELD_category') ?: 'category',
-                    'price_sale' => Tools::getValue('XML_FIELD_price_sale') ?: 'price',
-                    'price_regular' => Tools::getValue('XML_FIELD_price_regular') ?: 'regular_price',
-                    'onsale' => Tools::getValue('XML_FIELD_onsale') ?: 'onsale',
-                    'sizes' => Tools::getValue('XML_FIELD_sizes') ?: 'size',
-                    'composition' => Tools::getValue('XML_FIELD_composition') ?: 'composition',
-                    'dimensions' => Tools::getValue('XML_FIELD_dimensions') ?: 'dimension',
-                    'instock' => Tools::getValue('XML_FIELD_instock') ?: 'instock',
-                    'url' => Tools::getValue('XML_FIELD_url') ?: 'url',
-                    'image' => Tools::getValue('XML_FIELD_image') ?: 'image',
-                ];
+                $defaultMappings = $this->getDefaultFieldMappings();
+                $fieldMappings = [];
+                foreach ($defaultMappings as $key => $default) {
+                    $fieldMappings[$key] = Tools::getValue('XML_FIELD_' . $key) ?: $default;
+                }
 
                 Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($fieldMappings));
 
@@ -546,22 +543,7 @@ class Optic_AiChat extends Module
             $mappings = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true);
             if (!$mappings) {
                 // Use defaults
-                $mappings = [
-                    'product_id' => 'id',
-                    'title' => 'name',
-                    'description' => 'description',
-                    'short_description' => 'short_description',
-                    'category' => 'category',
-                    'price_sale' => 'price',
-                    'price_regular' => 'regular_price',
-                    'onsale' => 'onsale',
-                    'sizes' => 'size',
-                    'composition' => 'composition',
-                    'dimensions' => 'dimension',
-                    'instock' => 'instock',
-                    'url' => 'url',
-                    'image' => 'image',
-                ];
+                $mappings = $this->getDefaultFieldMappings();
             }
             
             $products = [];
@@ -589,7 +571,7 @@ class Optic_AiChat extends Module
             }
             
             $cacheFile = $uploadDir . 'products_cache.json';
-            $result = file_put_contents($cacheFile, json_encode($products, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $result = file_put_contents($cacheFile, json_encode($products, JSON_UNESCAPED_UNICODE));
             
             if ($result === false) {
                 error_log('OpticAiChat: Failed to write products cache file');

@@ -271,6 +271,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     createUserMessage(data);
                 }
             } catch (e) {
+                // Skip malformed messages to prevent breaking entire history
                 console.error('Error loading message:', e);
             }
         });

@@ -415,15 +415,16 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         
         foreach ($products as $product) {
             // Search in multiple fields
-            $searchableText = mb_strtolower(
-                $product['title'] . ' ' . 
-                $product['description'] . ' ' . 
-                $product['short_description'] . ' ' . 
-                $product['category'] . ' ' .
-                ($product['sizes'] ?? '') . ' ' .
-                ($product['composition'] ?? '') . ' ' .
-                ($product['dimensions'] ?? '')
-            );
+            $searchFields = array_filter([
+                $product['title'],
+                $product['description'],
+                $product['short_description'],
+                $product['category'],
+                $product['sizes'] ?? '',
+                $product['composition'] ?? '',
+                $product['dimensions'] ?? ''
+            ]);
+            $searchableText = mb_strtolower(implode(' ', $searchFields));
             
             // Fuzzy search
             if (strpos($searchableText, $queryLower) !== false) {
