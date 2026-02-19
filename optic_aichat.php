@@ -588,13 +588,13 @@ class Optic_AiChat extends Module
                 ],
             ];
 
-            $mappingFormHtml = $helper->generateForm([$mapping_form]);
+            $mappingForm = $helper->generateForm([$mapping_form]);
         }
 
         $mainForm = $helper->generateForm([$fields_form]);
         
         if (!empty($availableFields)) {
-            return $mainForm . $xml_upload_html . $preview_html . $mappingFormHtml;
+            return $mainForm . $xml_upload_html . $preview_html . $mappingForm;
         } else {
             return $mainForm . $xml_upload_html . '
             <div class="alert alert-info">
@@ -719,7 +719,7 @@ class Optic_AiChat extends Module
             $xml = simplexml_load_file($xmlPath, 'SimpleXMLElement', LIBXML_NOCDATA);
             
             if ($xml === false || !isset($xml->product)) {
-                return ['success' => false, 'error' => 'Invalid XML format. Expected <products> root with <product> children.'];
+                return ['success' => false, 'error' => 'Invalid XML format or no <product> elements found.'];
             }
             
             $productsCount = count($xml->product);
