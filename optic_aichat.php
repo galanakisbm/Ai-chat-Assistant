@@ -1032,9 +1032,9 @@ class Optic_AiChat extends Module
      */
     private function renderTabbedForm()
     {
-        $currentTab = Tools::getValue('tab', 'basic');
+        $currentTab = Tools::getValue('section', 'basic');
 
-        // Validate tab value
+        // Validate section value
         $validTabs = ['basic', 'xml', 'knowledge', 'analytics'];
         if (!in_array($currentTab, $validTabs)) {
             $currentTab = 'basic';
@@ -1056,7 +1056,7 @@ class Optic_AiChat extends Module
             $url = AdminController::$currentIndex .
                    '&configure=' . $this->name .
                    '&token=' . Tools::getAdminTokenLite('AdminModules') .
-                   '&tab=' . $key;
+                   '&section=' . $key;
             $html .= '<li class="' . $activeClass . '" role="presentation">
                         <a href="' . $url . '" role="tab">
                             ' . $label . '
@@ -1194,7 +1194,7 @@ class Optic_AiChat extends Module
         $helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG', 0);
         $helper->identifier = $this->identifier;
         $helper->submit_action = 'submitBasicSettings';
-        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&tab=basic';
+        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&section=basic';
         $helper->token = Tools::getAdminTokenLite('AdminModules');
 
         $helper->fields_value['OPTIC_AICHAT_WIDGET_TITLE'] = Configuration::get('OPTIC_AICHAT_WIDGET_TITLE');
@@ -1219,7 +1219,7 @@ class Optic_AiChat extends Module
         $html .= '<div class="panel-heading"><i class="icon-upload"></i> ' . $this->l('Step 1: Upload Product XML Feed') . '</div>';
         $html .= '<div class="panel-body">';
         $html .= '<p>' . $this->l('Upload your products XML file. The system will automatically detect available fields.') . '</p>';
-        $html .= '<form method="post" enctype="multipart/form-data" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&tab=xml">';
+        $html .= '<form method="post" enctype="multipart/form-data" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&section=xml">';
         $html .= '<div class="form-group">';
         $html .= '<label>' . $this->l('Select XML File') . '</label>';
         $html .= '<input type="file" name="OPTIC_AICHAT_PRODUCT_FEED" accept=".xml" required>';
@@ -1373,10 +1373,23 @@ class Optic_AiChat extends Module
         $helper = new HelperForm();
         $helper->module = $this;
         $helper->token = Tools::getAdminTokenLite('AdminModules');
-        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&tab=xml';
+        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&section=xml';
         $helper->submit_action = 'submitFieldMapping';
         $helper->default_form_language = (int)Configuration::get('PS_LANG_DEFAULT');
 
+        // Initialize ALL fields with empty values first
+        $allFields = [
+            'product_id', 'title', 'description', 'short_description',
+            'category', 'price_sale', 'price_regular', 'onsale',
+            'sizes', 'composition', 'dimensions', 'instock',
+            'url', 'image'
+        ];
+
+        foreach ($allFields as $field) {
+            $helper->fields_value['XML_FIELD_' . $field] = '';
+        }
+
+        // Then override with actual mapping values
         foreach ($currentMapping as $key => $value) {
             $helper->fields_value['XML_FIELD_' . $key] = $value;
         }
@@ -1478,7 +1491,7 @@ class Optic_AiChat extends Module
         $helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG', 0);
         $helper->identifier = $this->identifier;
         $helper->submit_action = 'submitKnowledgeBase';
-        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&tab=knowledge';
+        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&section=knowledge';
         $helper->token = Tools::getAdminTokenLite('AdminModules');
 
         $helper->fields_value['OPTIC_AICHAT_INCLUDE_SALES'] = Configuration::get('OPTIC_AICHAT_INCLUDE_SALES');
