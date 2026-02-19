@@ -718,8 +718,12 @@ class Optic_AiChat extends Module
         try {
             $xml = simplexml_load_file($xmlPath, 'SimpleXMLElement', LIBXML_NOCDATA);
             
-            if ($xml === false || !isset($xml->product)) {
-                return ['success' => false, 'error' => 'Invalid XML format or no <product> elements found.'];
+            if ($xml === false) {
+                return ['success' => false, 'error' => 'Failed to parse XML file. Please check that the file is valid XML.'];
+            }
+            
+            if (!isset($xml->product)) {
+                return ['success' => false, 'error' => 'No <product> elements found in XML. Please ensure your XML contains <product> tags.'];
             }
             
             $productsCount = count($xml->product);
