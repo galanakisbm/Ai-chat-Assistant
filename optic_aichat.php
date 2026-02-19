@@ -422,8 +422,8 @@ class Optic_AiChat extends Module
                         'icon' => 'icon-list',
                     ],
                     'description' => sprintf(
-                        $this->l('Found %d products with %d fields. Map your XML tags to module fields below.'),
-                        Configuration::get('OPTIC_AICHAT_PRODUCTS_COUNT') ?: count($sampleProduct),
+                        $this->l('Found %d products with %d available fields. Map your XML tags to module fields below.'),
+                        (int)Configuration::get('OPTIC_AICHAT_PRODUCTS_COUNT'),
                         count($availableFields)
                     ),
                     'input' => [
@@ -718,23 +718,27 @@ class Optic_AiChat extends Module
         try {
             $xml = simplexml_load_file($xmlPath, 'SimpleXMLElement', LIBXML_NOCDATA);
             
-            if (!$xml || !isset($xml->product)) {
-                return ['success' => false];
+            if ($xml === false || !isset($xml->product)) {
+                return ['success' => false, 'error' => 'Invalid XML format. Expected <products> root with <product> children.'];
             }
             
             $productsCount = count($xml->product);
+            
+            // Ensure at least one product exists
+            if ($productsCount === 0) {
+                return ['success' => false, 'error' => 'No products found in XML file.'];
+            }
+            
             $availableFields = [];
             $sampleProduct = [];
             
             // Get first product to detect structure
-            if ($productsCount > 0) {
-                $firstProduct = $xml->product[0];
-                
-                // Extract all child tags
-                foreach ($firstProduct->children() as $tag => $value) {
-                    $availableFields[] = $tag;
-                    $sampleProduct[$tag] = (string)$value;
-                }
+            $firstProduct = $xml->product[0];
+            
+            // Extract all child tags
+            foreach ($firstProduct->children() as $tag => $value) {
+                $availableFields[] = $tag;
+                $sampleProduct[$tag] = (string)$value;
             }
             
             // Save detection results
@@ -750,7 +754,7 @@ class Optic_AiChat extends Module
             ];
             
         } catch (Exception $e) {
-            return ['success' => false, 'error' => $e->getMessage()];
+            return ['success' => false, 'error' => 'Failed to parse XML: ' . $e->getMessage()];
         }
     }
 
