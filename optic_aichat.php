@@ -139,15 +139,22 @@ class Optic_AiChat extends Module
                     // Save auto-suggestions as initial mapping
                     Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($autoSuggestions));
                     
-                    $output .= $this->displayConfirmation(
-                        $this->l('XML uploaded successfully!') . '<br>' .
-                        $this->l('Products found:') . ' ' . $uploadResult['products_count'] . '<br>' .
-                        $this->l('Fields detected:') . ' ' . count($uploadResult['available_fields']) . '<br>' .
-                        $this->l('Auto-mapping applied. Please review below.')
-                    );
+                    // Show success with details
+                    $successMsg = '<strong>' . $this->l('XML uploaded successfully!') . '</strong><br>';
+                    $successMsg .= '📊 ' . $this->l('Products found:') . ' <strong>' . $uploadResult['products_count'] . '</strong><br>';
+                    $successMsg .= '🏷️ ' . $this->l('Fields detected:') . ' <strong>' . count($uploadResult['available_fields']) . '</strong><br>';
+                    $successMsg .= '🤖 ' . $this->l('Auto-mapping applied:') . ' <strong>' . count($autoSuggestions) . ' fields</strong><br>';
+                    $successMsg .= '👇 ' . $this->l('Please review the mapping below and click Save.');
+                    
+                    $output .= $this->displayConfirmation($successMsg);
                 } else {
-                    $output .= $this->displayError($uploadResult['error']);
+                    $output .= $this->displayError(
+                        $this->l('Failed to parse XML:') . ' ' . 
+                        ($uploadResult['error'] ?? 'Unknown error')
+                    );
                 }
+            } else {
+                $output .= $this->displayError($this->l('No file uploaded or file is empty.'));
             }
         }
 
@@ -412,7 +419,10 @@ class Optic_AiChat extends Module
             // Create dropdown options
             $fieldOptions = [['value' => '', 'label' => $this->l('-- Select Field --')]];
             foreach ($availableFields as $field) {
-                $fieldOptions[] = ['value' => $field, 'label' => '<' . $field . '>'];
+                $fieldOptions[] = [
+                    'value' => $field,
+                    'label' => '<' . htmlspecialchars($field) . '>'
+                ];
             }
 
             $mapping_form = [
@@ -716,34 +726,50 @@ class Optic_AiChat extends Module
     private function detectXMLStructure($xmlPath)
     {
         try {
-            $xml = simplexml_load_file($xmlPath, 'SimpleXMLElement', LIBXML_NOCDATA);
+            // Suppress warnings for malformed XML
+            libxml_use_internal_errors(true);
             
-            if ($xml === false) {
-                return ['success' => false, 'error' => 'Failed to parse XML file. Please check that the file is valid XML.'];
+            $xml = simplexml_load_file($xmlPath);
+            
+            if (!$xml) {
+                $errors = libxml_get_errors();
+                libxml_clear_errors();
+                return [
+                    'success' => false, 
+                    'error' => 'Invalid XML: ' . htmlspecialchars($errors[0]->message ?? 'Unknown error', ENT_QUOTES, 'UTF-8')
+                ];
             }
             
+            // Check if products exist
             if (!isset($xml->product)) {
-                return ['success' => false, 'error' => 'No <product> elements found in XML. Please ensure your XML contains <product> tags.'];
+                return [
+                    'success' => false,
+                    'error' => 'No <product> tags found in XML. Make sure XML structure is: <products><product>...</product></products>'
+                ];
             }
             
             $productsCount = count($xml->product);
-            
-            // Ensure at least one product exists
-            if ($productsCount === 0) {
-                return ['success' => false, 'error' => 'No products found in XML file.'];
-            }
-            
             $availableFields = [];
             $sampleProduct = [];
             
             // Get first product to detect structure
-            $firstProduct = $xml->product[0];
-            
-            // Extract all child tags
-            foreach ($firstProduct->children() as $tag => $value) {
-                $availableFields[] = $tag;
-                $sampleProduct[$tag] = (string)$value;
+            if ($productsCount > 0) {
+                $firstProduct = $xml->product[0];
+                
+                // Extract all child tags (skip root-level metadata like <created_at>)
+                foreach ($firstProduct->children() as $tag => $value) {
+                    // Add to available fields (for dropdown)
+                    if (!in_array($tag, $availableFields)) {
+                        $availableFields[] = $tag;
+                    }
+                    
+                    // Store sample (even if empty, to show structure) - handles CDATA automatically
+                    $sampleProduct[$tag] = trim((string)$value);
+                }
             }
+            
+            // Sort fields alphabetically for better UX
+            sort($availableFields);
             
             // Save detection results
             Configuration::updateValue('OPTIC_AICHAT_XML_FIELDS', json_encode($availableFields));
@@ -758,7 +784,10 @@ class Optic_AiChat extends Module
             ];
             
         } catch (Exception $e) {
-            return ['success' => false, 'error' => 'Failed to parse XML: ' . $e->getMessage()];
+            return [
+                'success' => false, 
+                'error' => 'Exception: ' . $e->getMessage()
+            ];
         }
     }
 
@@ -769,28 +798,36 @@ class Optic_AiChat extends Module
     {
         $suggestions = [];
         
-        // Smart matching rules
+        // Create lowercase map for case-insensitive matching
+        $fieldMap = [];
+        foreach ($availableFields as $field) {
+            $fieldMap[strtolower($field)] = $field;
+        }
+        
+        // Smart matching rules (case-insensitive)
         $rules = [
-            'product_id' => ['id', 'product_id', 'sku', 'product_sku', 'item_id'],
+            'product_id' => ['id', 'product_id', 'sku', 'product_sku', 'item_id', 'mpn'],
             'title' => ['name', 'title', 'product_name', 'product_title', 'item_name'],
-            'description' => ['description', 'desc', 'full_description', 'long_desc', 'details', 'full_desc'],
-            'short_description' => ['short_description', 'short_desc', 'summary', 'brief', 'brief_desc'],
+            'description' => ['description', 'desc', 'full_description', 'long_desc', 'details'],
+            'short_description' => ['short_description', 'short_desc', 'summary', 'brief', 'property'],
             'category' => ['category', 'categories', 'cat', 'product_category', 'main_category'],
-            'price_sale' => ['price', 'sale_price', 'current_price', 'selling_price', 'final_price'],
-            'price_regular' => ['regular_price', 'original_price', 'list_price', 'msrp', 'rrp'],
-            'onsale' => ['onsale', 'on_sale', 'is_sale', 'sale', 'discount_active', 'is_onsale'],
+            'price_sale' => ['price_with_vat', 'price', 'sale_price', 'current_price', 'selling_price', 'final_price'],
+            'price_regular' => ['retail_price', 'regular_price', 'original_price', 'list_price', 'msrp', 'rrp'],
+            'onsale' => ['on_sale', 'onsale', 'is_sale', 'sale', 'discount_active'],
             'sizes' => ['size', 'sizes', 'available_sizes', 'size_options'],
             'composition' => ['composition', 'material', 'materials', 'fabric'],
-            'dimensions' => ['dimension', 'dimensions', 'size_dimensions', 'measurements', 'product_dimensions'],
-            'instock' => ['instock', 'in_stock', 'stock', 'availability', 'available', 'stock_status'],
+            'dimensions' => ['dimension', 'dimensions', 'size_dimensions', 'measurements'],
+            'instock' => ['instock', 'in_stock', 'stock', 'availability', 'available'],
             'url' => ['url', 'link', 'product_url', 'product_link', 'permalink'],
             'image' => ['image', 'img', 'picture', 'photo', 'image_url', 'main_image'],
         ];
         
         foreach ($rules as $moduleField => $possibleTags) {
             foreach ($possibleTags as $tag) {
-                if (in_array($tag, $availableFields)) {
-                    $suggestions[$moduleField] = $tag;
+                $tagLower = strtolower($tag);
+                if (isset($fieldMap[$tagLower])) {
+                    // Use the actual case from XML
+                    $suggestions[$moduleField] = $fieldMap[$tagLower];
                     break;
                 }
             }
@@ -804,28 +841,24 @@ class Optic_AiChat extends Module
      */
     private function indexXMLProducts($xmlPath)
     {
-        // Prevent XXE attacks
-        $previousValue = libxml_disable_entity_loader(true);
-        
         try {
-            $xml = simplexml_load_file($xmlPath, 'SimpleXMLElement', LIBXML_NOCDATA);
+            libxml_use_internal_errors(true);
             
-            if ($xml === false) {
-                libxml_disable_entity_loader($previousValue);
+            $xml = simplexml_load_file($xmlPath);
+            
+            if (!$xml || !isset($xml->product)) {
                 return false;
             }
-            
+
             // Get field mappings
             $mappings = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true);
-            if (!$mappings) {
-                // Log warning if JSON decoding fails
-                if (Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING')) {
-                    error_log('OpticAiChat: Failed to decode XML field mappings, using defaults');
-                }
-                // Use defaults
-                $mappings = $this->getDefaultFieldMappings();
-            }
             
+            if (!$mappings || empty($mappings)) {
+                // Use auto-suggestions as fallback
+                $availableFields = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELDS'), true);
+                $mappings = $this->autoSuggestMapping($availableFields);
+            }
+
             $products = [];
             
             foreach ($xml->product as $xmlProduct) {
@@ -834,14 +867,18 @@ class Optic_AiChat extends Module
                 // Map each field dynamically
                 foreach ($mappings as $moduleField => $xmlTag) {
                     if (isset($xmlProduct->$xmlTag)) {
-                        $product[$moduleField] = (string)$xmlProduct->$xmlTag;
+                        // Trim and handle CDATA
+                        $value = trim((string)$xmlProduct->$xmlTag);
+                        $product[$moduleField] = $value;
                     } else {
                         $product[$moduleField] = '';
                     }
                 }
                 
-                // Add to products array
-                $products[] = $product;
+                // Only add products with at least ID and name
+                if (!empty($product['product_id']) && !empty($product['title'])) {
+                    $products[] = $product;
+                }
             }
             
             // Cache as JSON for faster access
@@ -851,23 +888,18 @@ class Optic_AiChat extends Module
             }
             
             $cacheFile = $uploadDir . 'products_cache.json';
-            $result = file_put_contents($cacheFile, json_encode($products, JSON_UNESCAPED_UNICODE));
+            $result = file_put_contents($cacheFile, json_encode($products, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             
             if ($result === false) {
-                $error = error_get_last();
-                error_log('OpticAiChat: Failed to write products cache file: ' . $cacheFile . 
-                         ' - Error: ' . ($error ? $error['message'] : 'Unknown'));
-                libxml_disable_entity_loader($previousValue);
+                error_log('OpticAiChat: Failed to write products cache file: ' . $cacheFile);
                 return false;
             }
             
             Configuration::updateValue('OPTIC_AICHAT_PRODUCTS_INDEXED', count($products));
             
-            libxml_disable_entity_loader($previousValue);
             return true;
+            
         } catch (Exception $e) {
-            error_log('OpticAiChat: Error indexing XML products - ' . $e->getMessage());
-            libxml_disable_entity_loader($previousValue);
             return false;
         }
     }
