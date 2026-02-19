@@ -9,7 +9,7 @@
 <div id="optic-chat-container" class="optic-chat-closed">
     <div class="optic-chat-header">
         <div class="header-title">
-            <img src="{$shop.logo}" alt="Logo" class="chat-header-logo" />
+            <img src="{$shop_logo}" alt="{$shop_name}" class="chat-header-logo" />
             <span>{$chat_title|escape:'html':'UTF-8'}</span>
         </div>
         <button id="optic-chat-close">✕</button>

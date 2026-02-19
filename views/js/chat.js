@@ -137,7 +137,16 @@ document.addEventListener('DOMContentLoaded', function() {
     function createUserMessage(text) {
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message user-message';
-        msgDiv.textContent = text;
+        
+        // Handle different input types
+        if (typeof text === 'string') {
+            msgDiv.textContent = text;
+        } else if (text && typeof text === 'object') {
+            msgDiv.textContent = text.content || JSON.stringify(text);
+        } else {
+            msgDiv.textContent = String(text);
+        }
+        
         messagesArea.appendChild(msgDiv);
     }
 
@@ -238,33 +247,45 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         const history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
+        
         history.forEach(msg => {
-            // Load stored messages (may be old format)
-            if (msg.class === 'bot-message') {
-                // Try to detect if it's a JSON structure
-                let data = msg.text;
+            try {
+                let data;
+                
+                // Parse the stored text
                 if (typeof msg.text === 'string') {
                     try {
-                        // Only attempt JSON parse if it looks like valid JSON structure
-                        if (msg.text.trim().startsWith('{') && msg.text.trim().endsWith('}')) {
-                            const parsed = JSON.parse(msg.text);
-                            // Verify it has expected structure
-                            if (parsed.type && parsed.hasOwnProperty('content')) {
-                                data = parsed;
-                            }
-                        }
+                        data = JSON.parse(msg.text);
                     } catch (e) {
-                        // Not JSON, use as plain text
+                        // Not JSON, treat as plain text
+                        data = msg.text;
                     }
+                } else {
+                    data = msg.text;
                 }
-                createBotMessage(data);
-            } else {
-                createUserMessage(msg.text);
+                
+                // Render based on message type
+                if (msg.class && msg.class.includes('bot-message')) {
+                    createBotMessage(data);
+                } else {
+                    createUserMessage(data);
+                }
+            } catch (e) {
+                // Skip malformed messages to prevent breaking entire history
+                console.error('Error loading message:', e);
             }
         });
         
         if (history.length === 0) {
-             addMessageToChat("Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω;", "bot-message");
+            const welcomeMsg = typeof optic_chat_welcome_message !== 'undefined' 
+                ? optic_chat_welcome_message 
+                : "Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊";
+            createBotMessage({
+                type: 'text',
+                content: welcomeMsg
+            });
         }
+        
+        scrollToBottom();
     }
 });

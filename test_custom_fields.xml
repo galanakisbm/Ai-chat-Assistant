@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<products>
+  <product>
+    <product_sku>12345</product_sku>
+    <product_title>Μαύρη Μπλούζα Premium</product_title>
+    <full_desc>Εξαιρετικής ποιότητας μπλούζα από βαμβάκι με μοντέρνο σχέδιο</full_desc>
+    <brief_desc>Κλασική μπλούζα βαμβακερή</brief_desc>
+    <main_category>Ρούχα</main_category>
+    <sale_price>20.00</sale_price>
+    <original_price>25.00</original_price>
+    <is_onsale>1</is_onsale>
+    <available_sizes>S,M,L,XL,XXL</available_sizes>
+    <material>100% Cotton</material>
+    <product_dimensions>Standard Fit</product_dimensions>
+    <stock_status>Y</stock_status>
+    <product_link>https://example.com/product/12345</product_link>
+    <main_image>https://example.com/images/12345.jpg</main_image>
+  </product>
+  <product>
+    <product_sku>12346</product_sku>
+    <product_title>Λευκό T-Shirt</product_title>
+    <full_desc>Άνετο λευκό t-shirt για καθημερινή χρήση</full_desc>
+    <brief_desc>Βασικό λευκό μπλουζάκι</brief_desc>
+    <main_category>Ρούχα</main_category>
+    <sale_price>15.00</sale_price>
+    <original_price>15.00</original_price>
+    <is_onsale>0</is_onsale>
+    <available_sizes>S,M,L,XL</available_sizes>
+    <material>95% Cotton, 5% Elastane</material>
+    <product_dimensions>Regular Fit</product_dimensions>
+    <stock_status>Y</stock_status>
+    <product_link>https://example.com/product/12346</product_link>
+    <main_image>https://example.com/images/12346.jpg</main_image>
+  </product>
+</products>

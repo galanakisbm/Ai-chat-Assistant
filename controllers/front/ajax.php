@@ -250,6 +250,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         "   Use pipe | as separator (NOT colon). Use exact values from search results.\n" .
         "   Example: [PRODUCT:19|Προσαρμόσιμη Κούπα|17.24|https://example.com/img.jpg|https://example.com/product]\n" .
         " - You can include multiple products, one per line\n" .
+        " - When available, mention product details like sizes, dimensions, composition, and stock status in your text\n" .
         " - Add friendly Greek text before/after products to provide context\n" .
         " - For non-product responses, use simple, friendly Greek text\n" .
         " - Available tools: search_products, get_cms_page_content, get_my_orders, get_active_offers\n" .
@@ -413,15 +414,36 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         $queryLower = mb_strtolower($query);
         
         foreach ($products as $product) {
-            $nameLower = mb_strtolower($product['name']);
-            $descLower = mb_strtolower($product['description']);
-            $catsLower = mb_strtolower($product['categories']);
+            // Search in multiple fields
+            $searchFields = array_filter([
+                $product['title'] ?? '',
+                $product['description'] ?? '',
+                $product['short_description'] ?? '',
+                $product['category'] ?? '',
+                $product['sizes'] ?? '',
+                $product['composition'] ?? '',
+                $product['dimensions'] ?? ''
+            ]);
+            $searchableText = mb_strtolower(implode(' ', $searchFields));
             
             // Fuzzy search
-            if (strpos($nameLower, $queryLower) !== false || 
-                strpos($descLower, $queryLower) !== false ||
-                strpos($catsLower, $queryLower) !== false) {
-                $results[] = $product;
+            if (strpos($searchableText, $queryLower) !== false) {
+                // Format for AI response with rich data
+                $results[] = [
+                    'id' => $product['product_id'],
+                    'name' => $product['title'],
+                    'description' => $product['short_description'] ?: $product['description'],
+                    'price' => $product['price_sale'],
+                    'regular_price' => $product['price_regular'],
+                    'image' => $product['image'],
+                    'url' => $product['url'],
+                    'category' => $product['category'],
+                    'onsale' => $product['onsale'] ?? '',
+                    'sizes' => $product['sizes'] ?? '',
+                    'composition' => $product['composition'] ?? '',
+                    'dimensions' => $product['dimensions'] ?? '',
+                    'instock' => $product['instock'] ?? '',
+                ];
             }
             
             if (count($results) >= 5) break;
