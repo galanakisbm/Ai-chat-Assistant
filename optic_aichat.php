@@ -736,7 +736,7 @@ class Optic_AiChat extends Module
                 libxml_clear_errors();
                 return [
                     'success' => false, 
-                    'error' => 'Invalid XML: ' . ($errors[0]->message ?? 'Unknown error')
+                    'error' => 'Invalid XML: ' . htmlspecialchars($errors[0]->message ?? 'Unknown error', ENT_QUOTES, 'UTF-8')
                 ];
             }
             
@@ -763,11 +763,8 @@ class Optic_AiChat extends Module
                         $availableFields[] = $tag;
                     }
                     
-                    // Get text value (handles CDATA automatically)
-                    $textValue = trim((string)$value);
-                    
-                    // Store sample (even if empty, to show structure)
-                    $sampleProduct[$tag] = $textValue;
+                    // Store sample (even if empty, to show structure) - handles CDATA automatically
+                    $sampleProduct[$tag] = trim((string)$value);
                 }
             }
             
@@ -891,7 +888,12 @@ class Optic_AiChat extends Module
             }
             
             $cacheFile = $uploadDir . 'products_cache.json';
-            file_put_contents($cacheFile, json_encode($products, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            $result = file_put_contents($cacheFile, json_encode($products, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+            
+            if ($result === false) {
+                error_log('OpticAiChat: Failed to write products cache file: ' . $cacheFile);
+                return false;
+            }
             
             Configuration::updateValue('OPTIC_AICHAT_PRODUCTS_INDEXED', count($products));
             
