@@ -48,7 +48,8 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
     private function parseAIResponse($response)
     {
         // Parse [PRODUCT:...] tags and convert to structured data
-        $pattern = '/\[PRODUCT:([^:]+):([^:]+):([^:]+):([^:]+):([^\]]+)\]/';
+        // Using pipe | as delimiter since it won't appear in URLs or product names
+        $pattern = '/\[PRODUCT:([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/';
         
         $result = [
             'type' => 'mixed',
@@ -197,9 +198,9 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         " You are a professional e-commerce assistant. Be friendly, concise, and helpful. " .
         " IMPORTANT RESPONSE FORMAT RULES:\n" .
         " - When recommending products from search_products results, you MUST format them as:\n" .
-        "   [PRODUCT:id:name:price:image:url]\n" .
-        "   Use the exact values from the search results (id, name, price, image, url)\n" .
-        "   Example: [PRODUCT:19:Προσαρμόσιμη Κούπα:17.24:https://example.com/img.jpg:https://example.com/product]\n" .
+        "   [PRODUCT:id|name|price|image|url]\n" .
+        "   Use pipe | as separator (NOT colon). Use exact values from search results.\n" .
+        "   Example: [PRODUCT:19|Προσαρμόσιμη Κούπα|17.24|https://example.com/img.jpg|https://example.com/product]\n" .
         " - You can include multiple products, one per line\n" .
         " - Add friendly Greek text before/after products to provide context\n" .
         " - For non-product responses, use simple, friendly Greek text\n" .

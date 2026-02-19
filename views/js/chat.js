@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const inputField = document.getElementById('optic-chat-input');
     const messagesArea = document.getElementById('optic-chat-messages');
 
+    // Fallback image for missing product images
+    const FALLBACK_IMAGE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Crect fill='%23f0f0f0' width='100' height='100'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3ENo Image%3C/text%3E%3C/svg%3E";
+
     // 1. Load History on Start
     loadChatState();
 
@@ -176,7 +179,7 @@ document.addEventListener('DOMContentLoaded', function() {
         card.innerHTML = `
             <div class="product-image">
                 <img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}" 
-                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'100\\' height=\\'100\\'%3E%3Crect fill=\\'%23f0f0f0\\' width=\\'100\\' height=\\'100\\'/%3E%3Ctext x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\' dy=\\'.3em\\' fill=\\'%23999\\'%3ENo Image%3C/text%3E%3C/svg%3E'">
+                     onerror="this.src='${FALLBACK_IMAGE}'">
             </div>
             <div class="product-info">
                 <h4 class="product-name">${escapeHtml(product.name)}</h4>
@@ -211,9 +214,21 @@ document.addEventListener('DOMContentLoaded', function() {
     function saveMessageToStorage(data, className) {
         let history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
         // Store simplified version for history context
-        const text = typeof data === 'string' ? data : 
-                     data.type === 'text' ? data.content : 
-                     JSON.stringify(data);
+        let text;
+        if (typeof data === 'string') {
+            text = data;
+        } else if (data.type === 'text') {
+            text = data.content;
+        } else if (data.type === 'mixed') {
+            // Extract summary from mixed content for history
+            const textParts = data.content
+                .filter(item => item.type === 'text')
+                .map(item => item.text);
+            const productCount = data.content.filter(item => item.type === 'product').length;
+            text = textParts.join(' ') + (productCount > 0 ? ` [${productCount} products]` : '');
+        } else {
+            text = '[Structured response]';
+        }
         history.push({ text: text, class: className });
         if (history.length > 50) history = history.slice(-50);
         localStorage.setItem('optic_chat_history', JSON.stringify(history));
@@ -230,13 +245,23 @@ document.addEventListener('DOMContentLoaded', function() {
         history.forEach(msg => {
             // Load stored messages (may be old format)
             if (msg.class === 'bot-message') {
-                try {
-                    const data = typeof msg.text === 'string' && msg.text.startsWith('{') ? 
-                                JSON.parse(msg.text) : msg.text;
-                    createBotMessage(data);
-                } catch (e) {
-                    createBotMessage(msg.text);
+                // Try to detect if it's a JSON structure
+                let data = msg.text;
+                if (typeof msg.text === 'string') {
+                    try {
+                        // Only attempt JSON parse if it looks like valid JSON structure
+                        if (msg.text.trim().startsWith('{') && msg.text.trim().endsWith('}')) {
+                            const parsed = JSON.parse(msg.text);
+                            // Verify it has expected structure
+                            if (parsed.type && (parsed.content || parsed.content === '')) {
+                                data = parsed;
+                            }
+                        }
+                    } catch (e) {
+                        // Not JSON, use as plain text
+                    }
                 }
+                createBotMessage(data);
             } else {
                 createUserMessage(msg.text);
             }
