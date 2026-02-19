@@ -70,6 +70,22 @@ class Optic_AiChat extends Module
         
         Db::getInstance()->execute($sql);
         
+        // Δημιουργία πίνακα για analytics
+        $sql_analytics = "CREATE TABLE IF NOT EXISTS `"._DB_PREFIX_."optic_aichat_analytics` (
+            `id_conversation` INT AUTO_INCREMENT PRIMARY KEY,
+            `id_customer` INT DEFAULT NULL,
+            `user_message` TEXT,
+            `bot_response` TEXT,
+            `products_mentioned` VARCHAR(255) DEFAULT NULL,
+            `response_time` FLOAT DEFAULT 0,
+            `detected_language` VARCHAR(5) DEFAULT NULL,
+            `date_add` DATETIME,
+            INDEX `date_add` (`date_add`),
+            INDEX `id_customer` (`id_customer`)
+        ) ENGINE="._MYSQL_ENGINE_." DEFAULT CHARSET=utf8mb4;";
+        
+        Db::getInstance()->execute($sql_analytics);
+        
         // Δημιουργία φακέλου για uploads
         $uploadDir = _PS_MODULE_DIR_ . $this->name . '/uploads/';
         if (!file_exists($uploadDir)) {
@@ -91,7 +107,9 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_PRIMARY_COLOR', '#268CCD') &&
             Configuration::updateValue('OPTIC_AICHAT_SECONDARY_COLOR', '#1a6ba3') &&
             Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', '#ffffff') &&
-            Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', $defaultMappings);
+            Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', $defaultMappings) &&
+            Configuration::updateValue('OPTIC_AICHAT_AUTO_LANGUAGE', 1) &&
+            Configuration::updateValue('OPTIC_AICHAT_FALLBACK_LANG', 'el');
     }
 
     public function uninstall()
@@ -112,10 +130,21 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_XML_FIELDS');
         Configuration::deleteByName('OPTIC_AICHAT_XML_SAMPLE');
         Configuration::deleteByName('OPTIC_AICHAT_PRODUCTS_COUNT');
+        Configuration::deleteByName('OPTIC_AICHAT_AUTO_LANGUAGE');
+        Configuration::deleteByName('OPTIC_AICHAT_FALLBACK_LANG');
+        Configuration::deleteByName('OPTIC_AICHAT_INCLUDE_SALES');
+        Configuration::deleteByName('OPTIC_AICHAT_INCLUDE_COUPONS');
+        Configuration::deleteByName('OPTIC_AICHAT_INCLUDE_STOCK');
+        Configuration::deleteByName('OPTIC_AICHAT_INCLUDE_CATEGORIES');
+        Configuration::deleteByName('OPTIC_AICHAT_INCLUDE_CMS');
+        Configuration::deleteByName('OPTIC_AICHAT_STORE_POLICIES');
+        Configuration::deleteByName('OPTIC_AICHAT_FAQ');
         
         // Διαγραφή πίνακα chat logs
-        $sql = "DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`";
-        Db::getInstance()->execute($sql);
+        Db::getInstance()->execute("DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`");
+        
+        // Διαγραφή πίνακα analytics
+        Db::getInstance()->execute("DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_analytics`");
         
         return parent::uninstall();
     }
@@ -127,19 +156,36 @@ class Optic_AiChat extends Module
     {
         $output = '';
 
-        // Step 1: Handle XML Upload First
+        // Handle Basic Settings (separate button)
+        if (Tools::isSubmit('submitBasicSettings')) {
+            $apiKey = trim(Tools::getValue('OPTIC_AICHAT_API_KEY'));
+            
+            if (empty($apiKey) || strlen($apiKey) < 20) {
+                $output .= $this->displayError($this->l('Please enter a valid OpenAI API Key (minimum 20 characters).'));
+            } else {
+                Configuration::updateValue('OPTIC_AICHAT_API_KEY', $apiKey);
+                Configuration::updateValue('OPTIC_AICHAT_WIDGET_TITLE', Tools::getValue('OPTIC_AICHAT_WIDGET_TITLE'));
+                Configuration::updateValue('OPTIC_AICHAT_SYSTEM_PROMPT', Tools::getValue('OPTIC_AICHAT_SYSTEM_PROMPT'));
+                Configuration::updateValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT', Tools::getValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT'));
+                Configuration::updateValue('OPTIC_AICHAT_PRIMARY_COLOR', Tools::getValue('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD');
+                Configuration::updateValue('OPTIC_AICHAT_SECONDARY_COLOR', Tools::getValue('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3');
+                Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', Tools::getValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff');
+                Configuration::updateValue('OPTIC_AICHAT_AUTO_LANGUAGE', Tools::getValue('OPTIC_AICHAT_AUTO_LANGUAGE'));
+                Configuration::updateValue('OPTIC_AICHAT_FALLBACK_LANG', Tools::getValue('OPTIC_AICHAT_FALLBACK_LANG'));
+                
+                $output .= $this->displayConfirmation($this->l('Basic settings saved successfully!'));
+            }
+        }
+        
+        // Handle XML Upload (separate button)
         if (Tools::isSubmit('uploadXML')) {
             if (isset($_FILES['OPTIC_AICHAT_PRODUCT_FEED']) && $_FILES['OPTIC_AICHAT_PRODUCT_FEED']['size'] > 0) {
                 $uploadResult = $this->handleXMLUpload($_FILES['OPTIC_AICHAT_PRODUCT_FEED']);
                 
                 if ($uploadResult['success']) {
-                    // Auto-suggest mappings
                     $autoSuggestions = $this->autoSuggestMapping($uploadResult['available_fields']);
-                    
-                    // Save auto-suggestions as initial mapping
                     Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($autoSuggestions));
                     
-                    // Show success with details
                     $successMsg = '<strong>' . $this->l('XML uploaded successfully!') . '</strong><br>';
                     $successMsg .= '📊 ' . $this->l('Products found:') . ' <strong>' . $uploadResult['products_count'] . '</strong><br>';
                     $successMsg .= '🏷️ ' . $this->l('Fields detected:') . ' <strong>' . count($uploadResult['available_fields']) . '</strong><br>';
@@ -157,90 +203,85 @@ class Optic_AiChat extends Module
                 $output .= $this->displayError($this->l('No file uploaded or file is empty.'));
             }
         }
+        
+        // Handle Field Mapping Save (separate button)
+        if (Tools::isSubmit('submitFieldMapping')) {
+            $fieldMappings = [
+                'product_id' => Tools::getValue('XML_FIELD_product_id'),
+                'title' => Tools::getValue('XML_FIELD_title'),
+                'description' => Tools::getValue('XML_FIELD_description'),
+                'short_description' => Tools::getValue('XML_FIELD_short_description'),
+                'category' => Tools::getValue('XML_FIELD_category'),
+                'price_sale' => Tools::getValue('XML_FIELD_price_sale'),
+                'price_regular' => Tools::getValue('XML_FIELD_price_regular'),
+                'onsale' => Tools::getValue('XML_FIELD_onsale'),
+                'sizes' => Tools::getValue('XML_FIELD_sizes'),
+                'composition' => Tools::getValue('XML_FIELD_composition'),
+                'dimensions' => Tools::getValue('XML_FIELD_dimensions'),
+                'instock' => Tools::getValue('XML_FIELD_instock'),
+                'url' => Tools::getValue('XML_FIELD_url'),
+                'image' => Tools::getValue('XML_FIELD_image'),
+            ];
 
-        // Step 2: Handle Settings and Field Mapping Save
-        if (Tools::isSubmit('submitOpticAiChat')) {
-            $apiKey = Tools::getValue('OPTIC_AICHAT_API_KEY');
-            $prompt = Tools::getValue('OPTIC_AICHAT_SYSTEM_PROMPT');
-            $title = Tools::getValue('OPTIC_AICHAT_WIDGET_TITLE');
-            $enablePageContext = Tools::getValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
-            $pageContextTemplate = Tools::getValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
-            
-            // Color values
-            $primaryColor = Tools::getValue('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD';
-            $secondaryColor = Tools::getValue('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
-            $buttonTextColor = Tools::getValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
+            $fieldMappings = array_filter($fieldMappings);
+            Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($fieldMappings));
 
-            if (!$apiKey || empty($apiKey)) {
-                $output .= $this->displayError($this->l('Παρακαλώ εισάγετε το API Key.'));
-            } else {
-                Configuration::updateValue('OPTIC_AICHAT_API_KEY', $apiKey);
-                Configuration::updateValue('OPTIC_AICHAT_SYSTEM_PROMPT', $prompt);
-                Configuration::updateValue('OPTIC_AICHAT_WIDGET_TITLE', $title);
-                Configuration::updateValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT', (int)$enablePageContext);
-                Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', $pageContextTemplate);
-                
-                // Save colors
-                Configuration::updateValue('OPTIC_AICHAT_PRIMARY_COLOR', $primaryColor);
-                Configuration::updateValue('OPTIC_AICHAT_SECONDARY_COLOR', $secondaryColor);
-                Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', $buttonTextColor);
-
-                // Save field mappings
-                $fieldMappings = [
-                    'product_id' => Tools::getValue('XML_FIELD_product_id'),
-                    'title' => Tools::getValue('XML_FIELD_title'),
-                    'description' => Tools::getValue('XML_FIELD_description'),
-                    'short_description' => Tools::getValue('XML_FIELD_short_description'),
-                    'category' => Tools::getValue('XML_FIELD_category'),
-                    'price_sale' => Tools::getValue('XML_FIELD_price_sale'),
-                    'price_regular' => Tools::getValue('XML_FIELD_price_regular'),
-                    'onsale' => Tools::getValue('XML_FIELD_onsale'),
-                    'sizes' => Tools::getValue('XML_FIELD_sizes'),
-                    'composition' => Tools::getValue('XML_FIELD_composition'),
-                    'dimensions' => Tools::getValue('XML_FIELD_dimensions'),
-                    'instock' => Tools::getValue('XML_FIELD_instock'),
-                    'url' => Tools::getValue('XML_FIELD_url'),
-                    'image' => Tools::getValue('XML_FIELD_image'),
-                ];
-
-                // Remove empty mappings
-                $fieldMappings = array_filter($fieldMappings);
-
-                // Validate required mappings
-                $requiredFields = ['product_id', 'title', 'price_sale', 'url', 'image'];
-                $missingFields = [];
-
-                foreach ($requiredFields as $required) {
-                    if (empty($fieldMappings[$required])) {
-                        $missingFields[] = $required;
-                    }
-                }
-
-                if (!empty($missingFields)) {
-                    $output .= $this->displayWarning(
-                        $this->l('Warning: Required fields not mapped:') . ' ' . 
-                        implode(', ', $missingFields)
-                    );
-                }
-
-                Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($fieldMappings));
-
-                // Re-index products with new mapping
-                $xmlPath = Configuration::get('OPTIC_AICHAT_XML_PATH');
-                if ($xmlPath && file_exists($xmlPath)) {
-                    $this->indexXMLProducts($xmlPath);
-                    $productsIndexed = Configuration::get('OPTIC_AICHAT_PRODUCTS_INDEXED');
-                    $output .= $this->displayConfirmation(
-                        $this->l('Settings saved!') . '<br>' .
-                        $this->l('Products indexed:') . ' ' . $productsIndexed
-                    );
-                } else {
-                    $output .= $this->displayConfirmation($this->l('Οι ρυθμίσεις αποθηκεύτηκαν.'));
-                }
+            $xmlPath = Configuration::get('OPTIC_AICHAT_XML_PATH');
+            if ($xmlPath && file_exists($xmlPath)) {
+                $this->indexXMLProducts($xmlPath);
             }
+            
+            $output .= $this->displayConfirmation($this->l('Field mapping saved and products re-indexed!'));
+        }
+        
+        // Handle Knowledge Base Save (separate button)
+        if (Tools::isSubmit('submitKnowledgeBase')) {
+            Configuration::updateValue('OPTIC_AICHAT_INCLUDE_SALES', Tools::getValue('OPTIC_AICHAT_INCLUDE_SALES'));
+            Configuration::updateValue('OPTIC_AICHAT_INCLUDE_COUPONS', Tools::getValue('OPTIC_AICHAT_INCLUDE_COUPONS'));
+            Configuration::updateValue('OPTIC_AICHAT_INCLUDE_STOCK', Tools::getValue('OPTIC_AICHAT_INCLUDE_STOCK'));
+            Configuration::updateValue('OPTIC_AICHAT_INCLUDE_CATEGORIES', Tools::getValue('OPTIC_AICHAT_INCLUDE_CATEGORIES'));
+            Configuration::updateValue('OPTIC_AICHAT_INCLUDE_CMS', Tools::getValue('OPTIC_AICHAT_INCLUDE_CMS'));
+            Configuration::updateValue('OPTIC_AICHAT_STORE_POLICIES', Tools::getValue('OPTIC_AICHAT_STORE_POLICIES'));
+            Configuration::updateValue('OPTIC_AICHAT_FAQ', Tools::getValue('OPTIC_AICHAT_FAQ'));
+            
+            $output .= $this->displayConfirmation($this->l('Knowledge Base saved successfully!'));
+        }
+        
+        // Handle Delete XML (NEW)
+        if (Tools::isSubmit('deleteXML')) {
+            $uploadDir = _PS_MODULE_DIR_ . $this->name . '/uploads/';
+            
+            if (file_exists($uploadDir . 'products.xml')) {
+                unlink($uploadDir . 'products.xml');
+            }
+            
+            if (file_exists($uploadDir . 'products_cache.json')) {
+                unlink($uploadDir . 'products_cache.json');
+            }
+            
+            Configuration::deleteByName('OPTIC_AICHAT_XML_PATH');
+            Configuration::deleteByName('OPTIC_AICHAT_XML_FIELDS');
+            Configuration::deleteByName('OPTIC_AICHAT_XML_SAMPLE');
+            Configuration::deleteByName('OPTIC_AICHAT_XML_FIELD_MAPPING');
+            Configuration::deleteByName('OPTIC_AICHAT_PRODUCTS_COUNT');
+            Configuration::deleteByName('OPTIC_AICHAT_PRODUCTS_INDEXED');
+            
+            $output .= $this->displayConfirmation($this->l('XML feed and cache deleted successfully!'));
+        }
+        
+        // Handle Export Analytics
+        if (Tools::isSubmit('exportAnalytics')) {
+            $this->exportAnalyticsCSV();
+            exit;
+        }
+        
+        // Handle Clear Old Analytics
+        if (Tools::isSubmit('clearOldAnalytics')) {
+            Db::getInstance()->execute('DELETE FROM ' . _DB_PREFIX_ . 'optic_aichat_analytics WHERE date_add < DATE_SUB(NOW(), INTERVAL 90 DAY)');
+            $output .= $this->displayConfirmation($this->l('Old analytics data cleared successfully!'));
         }
 
-        return $output . $this->renderForm();
+        return $output . $this->renderTabbedForm();
     }
 
     /**
@@ -360,21 +401,44 @@ class Optic_AiChat extends Module
         }
 
         // XML Upload Form (Separate)
+        $xmlPath = Configuration::get('OPTIC_AICHAT_XML_PATH');
+        $hasXML = $xmlPath && file_exists($xmlPath);
+        
         $xml_upload_html = '
         <div class="panel">
             <div class="panel-heading">
                 <i class="icon-upload"></i> ' . $this->l('Step 1: Upload Product XML Feed') . '
             </div>
-            <div class="panel-body">
+            <div class="panel-body">';
+        
+        if ($hasXML) {
+            $productsIndexed = Configuration::get('OPTIC_AICHAT_PRODUCTS_INDEXED');
+            $xml_upload_html .= '
+                <div class="alert alert-success">
+                    <strong>' . $this->l('XML Feed Active') . '</strong><br>
+                    ' . $this->l('Products indexed:') . ' <strong>' . $productsIndexed . '</strong>
+                </div>';
+        }
+        
+        $xml_upload_html .= '
                 <p>' . $this->l('Upload your products XML file. The system will automatically detect available fields.') . '</p>
-                <form method="post" enctype="multipart/form-data" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '">
+                <form method="post" enctype="multipart/form-data" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&tab=xml">
                     <div class="form-group">
                         <label>' . $this->l('Select XML File') . '</label>
                         <input type="file" name="OPTIC_AICHAT_PRODUCT_FEED" accept=".xml" required>
                     </div>
                     <button type="submit" name="uploadXML" class="btn btn-primary">
                         <i class="icon-upload"></i> ' . $this->l('Upload & Detect Fields') . '
-                    </button>
+                    </button>';
+        
+        if ($hasXML) {
+            $xml_upload_html .= '
+                    <button type="submit" name="deleteXML" class="btn btn-danger" onclick="return confirm(\'' . $this->l('Delete XML feed and cache?') . '\');">
+                        <i class="icon-trash"></i> ' . $this->l('Delete XML & Clear Cache') . '
+                    </button>';
+        }
+        
+        $xml_upload_html .= '
                 </form>
             </div>
         </div>';
@@ -594,6 +658,7 @@ class Optic_AiChat extends Module
                     ],
                     'submit' => [
                         'title' => $this->l('Save Mapping & Index Products'),
+                        'name' => 'submitFieldMapping',
                     ],
                 ],
             ];
@@ -902,5 +967,732 @@ class Optic_AiChat extends Module
         } catch (Exception $e) {
             return false;
         }
+    }
+
+    /**
+     * Build dynamic context from Knowledge Base settings
+     */
+    public function buildDynamicContext()
+    {
+        $context = "";
+        
+        // 1. On-Sale Products
+        if (Configuration::get('OPTIC_AICHAT_INCLUDE_SALES')) {
+            $onSale = $this->getOnSaleProducts();
+            if (!empty($onSale)) {
+                $context .= "\n\n=== CURRENT PROMOTIONS (ΕΚΠΤΩΣΕΙΣ) ===\n";
+                $context .= "When user asks about 'εκπτώσεις', 'προσφορές', 'sales', mention these:\n";
+                foreach ($onSale as $product) {
+                    $discount = $product['old_price'] - $product['price'];
+                    $context .= sprintf(
+                        "- %s: NOW %s€ (was %s€) - Save %.2f€!\n",
+                        $product['name'],
+                        $product['price'],
+                        $product['old_price'],
+                        $discount
+                    );
+                }
+            }
+        }
+        
+        // 2. Active Coupons
+        if (Configuration::get('OPTIC_AICHAT_INCLUDE_COUPONS')) {
+            $coupons = $this->getActiveCoupons();
+            if (!empty($coupons)) {
+                $context .= "\n\n=== ACTIVE DISCOUNT CODES (ΚΩΔΙΚΟΙ ΕΚΠΤΩΣΗΣ) ===\n";
+                foreach ($coupons as $coupon) {
+                    $context .= "- Code: '{$coupon['code']}' - {$coupon['description']}\n";
+                }
+            }
+        }
+        
+        // 3. Low Stock Alerts
+        if (Configuration::get('OPTIC_AICHAT_INCLUDE_STOCK')) {
+            $lowStock = $this->getLowStockProducts();
+            if (!empty($lowStock)) {
+                $context .= "\n\n=== LOW STOCK (mention urgency!) ===\n";
+                foreach ($lowStock as $product) {
+                    $context .= "- {$product['name']}: Only {$product['quantity']} left in stock!\n";
+                }
+            }
+        }
+        
+        // 4. Category Structure
+        if (Configuration::get('OPTIC_AICHAT_INCLUDE_CATEGORIES')) {
+            $categories = $this->getCategoryStructure();
+            if (!empty($categories)) {
+                $context .= "\n\n=== CATALOG CATEGORIES ===\n";
+                $context .= $categories;
+            }
+        }
+        
+        // 5. CMS Pages
+        if (Configuration::get('OPTIC_AICHAT_INCLUDE_CMS')) {
+            $cms = $this->getCMSContent();
+            if (!empty($cms)) {
+                $context .= "\n\n=== STORE INFORMATION ===\n";
+                $context .= $cms;
+            }
+        }
+        
+        // 6. Store Policies
+        $policies = Configuration::get('OPTIC_AICHAT_STORE_POLICIES');
+        if (!empty($policies)) {
+            $context .= "\n\n=== STORE POLICIES (Shipping, Returns, Payment) ===\n";
+            $context .= trim($policies) . "\n";
+        }
+        
+        // 7. FAQ
+        $faq = Configuration::get('OPTIC_AICHAT_FAQ');
+        if (!empty($faq)) {
+            $context .= "\n\n=== FREQUENTLY ASKED QUESTIONS ===\n";
+            $context .= trim($faq) . "\n";
+        }
+        
+        return $context;
+    }
+
+    private function getOnSaleProducts()
+    {
+        $cacheFile = _PS_MODULE_DIR_ . $this->name . '/uploads/products_cache.json';
+        
+        if (!file_exists($cacheFile)) {
+            return [];
+        }
+        
+        $products = json_decode(file_get_contents($cacheFile), true);
+        if (!$products) {
+            return [];
+        }
+        
+        $onSale = [];
+        
+        foreach ($products as $product) {
+            $isOnSale = ($product['onsale'] == '1' || strtolower($product['onsale']) == 'y');
+            $hasDiscount = !empty($product['price_regular']) && $product['price_sale'] < $product['price_regular'];
+            
+            if ($isOnSale || $hasDiscount) {
+                $onSale[] = [
+                    'name' => $product['title'],
+                    'price' => $product['price_sale'],
+                    'old_price' => $product['price_regular'] ?: $product['price_sale'],
+                    'url' => $product['url'],
+                ];
+            }
+        }
+        
+        return $onSale;
+    }
+
+    private function getActiveCoupons()
+    {
+        $idLang = (int)Context::getContext()->language->id;
+        
+        $sql = 'SELECT cr.code, crl.name as description
+                FROM ' . _DB_PREFIX_ . 'cart_rule cr
+                LEFT JOIN ' . _DB_PREFIX_ . 'cart_rule_lang crl ON cr.id_cart_rule = crl.id_cart_rule
+                WHERE cr.active = 1
+                AND crl.id_lang = ' . $idLang . '
+                AND (cr.date_to >= NOW() OR cr.date_to = "0000-00-00 00:00:00")
+                AND (cr.quantity > 0 OR cr.quantity = 0)
+                LIMIT 10';
+        
+        return Db::getInstance()->executeS($sql) ?: [];
+    }
+
+    private function getLowStockProducts()
+    {
+        $cacheFile = _PS_MODULE_DIR_ . $this->name . '/uploads/products_cache.json';
+        
+        if (!file_exists($cacheFile)) {
+            return [];
+        }
+        
+        $products = json_decode(file_get_contents($cacheFile), true);
+        if (!$products) {
+            return [];
+        }
+        
+        $lowStock = [];
+        
+        // For XML-based products, we rely on instock flag
+        // In real scenarios, you'd query the database for actual quantities
+        foreach ($products as $product) {
+            if (strtolower($product['instock']) == 'n' || strtolower($product['instock']) == 'no') {
+                $lowStock[] = [
+                    'name' => $product['title'],
+                    'quantity' => 0
+                ];
+            }
+        }
+        
+        return $lowStock;
+    }
+
+    private function getCategoryStructure()
+    {
+        $cacheFile = _PS_MODULE_DIR_ . $this->name . '/uploads/products_cache.json';
+        
+        if (!file_exists($cacheFile)) {
+            return '';
+        }
+        
+        $products = json_decode(file_get_contents($cacheFile), true);
+        if (!$products) {
+            return '';
+        }
+        
+        $categories = [];
+        
+        foreach ($products as $product) {
+            $cat = $product['category'];
+            if (!isset($categories[$cat])) {
+                $categories[$cat] = 0;
+            }
+            $categories[$cat]++;
+        }
+        
+        $output = '';
+        foreach ($categories as $cat => $count) {
+            $output .= "- {$cat} ({$count} products)\n";
+        }
+        
+        return $output;
+    }
+
+    private function getCMSContent()
+    {
+        $idLang = (int)Context::getContext()->language->id;
+        
+        $sql = 'SELECT meta_title, content
+                FROM ' . _DB_PREFIX_ . 'cms_lang
+                WHERE id_lang = ' . $idLang . '
+                AND active = 1
+                LIMIT 5';
+        
+        $pages = Db::getInstance()->executeS($sql);
+        if (!$pages) {
+            return '';
+        }
+        
+        $output = '';
+        foreach ($pages as $page) {
+            $summary = strip_tags($page['content']);
+            $summary = mb_substr($summary, 0, 200) . '...';
+            $output .= "- {$page['meta_title']}: {$summary}\n";
+        }
+        
+        return $output;
+    }
+
+    /**
+     * Analytics methods
+     */
+    private function renderAnalyticsDashboard()
+    {
+        $stats = $this->getAnalyticsStats();
+        $topQuestions = $this->getTopQuestions(10);
+        $productMentions = $this->getTopProductMentions(10);
+        
+        $html = '
+        <div class="panel">
+            <div class="panel-heading">
+                <i class="icon-bar-chart"></i> ' . $this->l('Analytics Dashboard') . '
+                <span class="badge badge-success pull-right">' . $this->l('Last 30 Days') . '</span>
+            </div>
+            <div class="panel-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="alert alert-info">
+                            <h4><i class="icon-comments"></i> ' . number_format($stats['total_conversations']) . '</h4>
+                            <p>' . $this->l('Total Conversations') . '</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="alert alert-success">
+                            <h4><i class="icon-comment"></i> ' . number_format($stats['total_messages']) . '</h4>
+                            <p>' . $this->l('Total Messages') . '</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="alert alert-warning">
+                            <h4><i class="icon-time"></i> ' . number_format($stats['avg_response_time'], 2) . 's</h4>
+                            <p>' . $this->l('Avg Response Time') . '</p>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="alert alert-danger">
+                            <h4><i class="icon-exchange"></i> ' . number_format($stats['avg_messages_per_conv'], 1) . '</h4>
+                            <p>' . $this->l('Avg Messages/Conv') . '</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h4><i class="icon-question"></i> ' . $this->l('Most Asked Questions') . '</h4>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>' . $this->l('Question') . '</th>
+                                    <th>' . $this->l('Count') . '</th>
+                                </tr>
+                            </thead>
+                            <tbody>';
+        
+        $i = 1;
+        foreach ($topQuestions as $q) {
+            $html .= '<tr>
+                        <td>' . $i++ . '</td>
+                        <td>' . htmlspecialchars(mb_substr($q['user_message'], 0, 60)) . '...</td>
+                        <td><span class="badge badge-primary">' . $q['count'] . '</span></td>
+                      </tr>';
+        }
+        
+        $html .= '
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h4><i class="icon-search"></i> ' . $this->l('Popular Search Terms') . '</h4>
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>' . $this->l('Keyword') . '</th>
+                                    <th>' . $this->l('Mentions') . '</th>
+                                </tr>
+                            </thead>
+                            <tbody>';
+        
+        $i = 1;
+        foreach ($productMentions as $pm) {
+            $html .= '<tr>
+                        <td>' . $i++ . '</td>
+                        <td><strong>' . htmlspecialchars($pm['keyword']) . '</strong></td>
+                        <td><span class="badge badge-success">' . $pm['count'] . '</span></td>
+                      </tr>';
+        }
+        
+        $html .= '
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row">
+                    <div class="col-md-12">
+                        <form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '" style="display:inline;">
+                            <button type="submit" name="exportAnalytics" class="btn btn-primary">
+                                <i class="icon-download"></i> ' . $this->l('Export to CSV') . '
+                            </button>
+                        </form>
+                        
+                        <form method="post" action="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '" style="display:inline;" onsubmit="return confirm(\'' . $this->l('Delete all analytics data older than 90 days?') . '\');">
+                            <button type="submit" name="clearOldAnalytics" class="btn btn-warning">
+                                <i class="icon-trash"></i> ' . $this->l('Clear Old Data (>90 days)') . '
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>';
+        
+        return $html;
+    }
+
+    private function getAnalyticsStats()
+    {
+        $sql = 'SELECT 
+                    COUNT(DISTINCT DATE(date_add)) as total_conversations,
+                    COUNT(*) as total_messages,
+                    AVG(response_time) as avg_response_time,
+                    COUNT(*) / GREATEST(COUNT(DISTINCT DATE(date_add)), 1) as avg_messages_per_conv
+                FROM ' . _DB_PREFIX_ . 'optic_aichat_analytics
+                WHERE date_add >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
+        
+        $result = Db::getInstance()->getRow($sql);
+        
+        return [
+            'total_conversations' => $result['total_conversations'] ?: 0,
+            'total_messages' => $result['total_messages'] ?: 0,
+            'avg_response_time' => $result['avg_response_time'] ?: 0,
+            'avg_messages_per_conv' => $result['avg_messages_per_conv'] ?: 0,
+        ];
+    }
+
+    private function getTopQuestions($limit = 10)
+    {
+        $sql = 'SELECT user_message, COUNT(*) as count
+                FROM ' . _DB_PREFIX_ . 'optic_aichat_analytics
+                WHERE date_add >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                AND user_message != ""
+                GROUP BY user_message
+                ORDER BY count DESC
+                LIMIT ' . (int)$limit;
+        
+        return Db::getInstance()->executeS($sql) ?: [];
+    }
+
+    private function getTopProductMentions($limit = 10)
+    {
+        $sql = 'SELECT products_mentioned, COUNT(*) as count
+                FROM ' . _DB_PREFIX_ . 'optic_aichat_analytics
+                WHERE date_add >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                AND products_mentioned IS NOT NULL
+                AND products_mentioned != ""
+                GROUP BY products_mentioned
+                ORDER BY count DESC
+                LIMIT ' . (int)$limit;
+        
+        $results = Db::getInstance()->executeS($sql) ?: [];
+        
+        // Flatten comma-separated keywords
+        $keywords = [];
+        foreach ($results as $row) {
+            $parts = explode(',', $row['products_mentioned']);
+            foreach ($parts as $keyword) {
+                $keyword = trim($keyword);
+                if (!isset($keywords[$keyword])) {
+                    $keywords[$keyword] = 0;
+                }
+                $keywords[$keyword] += $row['count'];
+            }
+        }
+        
+        arsort($keywords);
+        
+        $output = [];
+        $i = 0;
+        foreach ($keywords as $keyword => $count) {
+            if ($i++ >= $limit) break;
+            $output[] = ['keyword' => $keyword, 'count' => $count];
+        }
+        
+        return $output;
+    }
+
+    private function exportAnalyticsCSV()
+    {
+        $sql = 'SELECT user_message, bot_response, products_mentioned, response_time, detected_language, date_add
+                FROM ' . _DB_PREFIX_ . 'optic_aichat_analytics
+                WHERE date_add >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                ORDER BY date_add DESC';
+        
+        $data = Db::getInstance()->executeS($sql);
+        
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename=analytics_' . date('Y-m-d') . '.csv');
+        
+        $output = fopen('php://output', 'w');
+        
+        // Headers
+        fputcsv($output, ['Date', 'User Message', 'Bot Response', 'Keywords', 'Response Time', 'Language']);
+        
+        // Data
+        foreach ($data as $row) {
+            fputcsv($output, [
+                $row['date_add'],
+                mb_substr($row['user_message'], 0, 200),
+                mb_substr($row['bot_response'], 0, 200),
+                $row['products_mentioned'],
+                $row['response_time'] . 's',
+                $row['detected_language'],
+            ]);
+        }
+        
+        fclose($output);
+    }
+
+    /**
+     * Tabbed UI methods
+     */
+    private function renderTabbedForm()
+    {
+        $currentTab = Tools::getValue('tab', 'basic');
+        
+        $tabs = [
+            'basic' => $this->l('Basic Settings'),
+            'xml' => $this->l('XML Product Feed'),
+            'knowledge' => $this->l('Knowledge Base'),
+            'analytics' => $this->l('Analytics'),
+        ];
+        
+        $html = '<div class="panel">';
+        $html .= '<ul class="nav nav-tabs">';
+        
+        foreach ($tabs as $key => $label) {
+            $active = ($currentTab == $key) ? 'active' : '';
+            $html .= '<li class="' . $active . '">
+                        <a href="' . AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&tab=' . $key . '">
+                            ' . $label . '
+                        </a>
+                      </li>';
+        }
+        
+        $html .= '</ul>';
+        $html .= '<div class="tab-content">';
+        
+        switch ($currentTab) {
+            case 'basic':
+                $html .= $this->renderBasicSettingsForm();
+                break;
+            case 'xml':
+                $html .= $this->renderXMLFeedForm();
+                break;
+            case 'knowledge':
+                $html .= $this->renderKnowledgeBaseForm();
+                break;
+            case 'analytics':
+                $html .= $this->renderAnalyticsDashboard();
+                break;
+        }
+        
+        $html .= '</div>';
+        $html .= '</div>';
+        
+        return $html;
+    }
+
+    private function renderBasicSettingsForm()
+    {
+        $fields_form = [
+            'form' => [
+                'legend' => [
+                    'title' => $this->l('Basic Settings'),
+                    'icon' => 'icon-cogs',
+                ],
+                'input' => [
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Chat Widget Title'),
+                        'name' => 'OPTIC_AICHAT_WIDGET_TITLE',
+                        'desc' => $this->l('The title displayed at the top of the chat window.'),
+                        'required' => true,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('OpenAI API Key'),
+                        'name' => 'OPTIC_AICHAT_API_KEY',
+                        'desc' => $this->l('Enter your key from platform.openai.com'),
+                        'required' => true,
+                    ],
+                    [
+                        'type' => 'textarea',
+                        'label' => $this->l('System Prompt (AI Instructions)'),
+                        'name' => 'OPTIC_AICHAT_SYSTEM_PROMPT',
+                        'rows' => 5,
+                        'desc' => $this->l('Give instructions to the bot'),
+                        'required' => true,
+                    ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Enable Page Context'),
+                        'name' => 'OPTIC_AICHAT_ENABLE_PAGE_CONTEXT',
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                        'desc' => $this->l('Allow AI to read page-specific information')
+                    ],
+                    [
+                        'type' => 'color',
+                        'label' => $this->l('Primary Color'),
+                        'name' => 'OPTIC_AICHAT_PRIMARY_COLOR',
+                        'desc' => $this->l('Main chat color (buttons, header)'),
+                        'size' => 20,
+                    ],
+                    [
+                        'type' => 'color',
+                        'label' => $this->l('Secondary Color'),
+                        'name' => 'OPTIC_AICHAT_SECONDARY_COLOR',
+                        'desc' => $this->l('Secondary accent color'),
+                        'size' => 20,
+                    ],
+                    [
+                        'type' => 'color',
+                        'label' => $this->l('Button Text Color'),
+                        'name' => 'OPTIC_AICHAT_BUTTON_TEXT_COLOR',
+                        'desc' => $this->l('Text color on buttons'),
+                        'size' => 20,
+                    ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Enable Auto Language Detection'),
+                        'name' => 'OPTIC_AICHAT_AUTO_LANGUAGE',
+                        'desc' => $this->l('Automatically detect user language and respond accordingly'),
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Fallback Language'),
+                        'name' => 'OPTIC_AICHAT_FALLBACK_LANG',
+                        'desc' => $this->l('Default language when auto-detection is off or fails'),
+                        'options' => [
+                            'query' => [
+                                ['id' => 'el', 'name' => 'Ελληνικά (Greek)'],
+                                ['id' => 'en', 'name' => 'English'],
+                            ],
+                            'id' => 'id',
+                            'name' => 'name'
+                        ],
+                    ],
+                ],
+                'submit' => [
+                    'title' => $this->l('Save Basic Settings'),
+                    'name' => 'submitBasicSettings',
+                ],
+            ],
+        ];
+
+        $helper = new HelperForm();
+        $helper->show_toolbar = false;
+        $helper->table = $this->table;
+        $helper->module = $this;
+        $helper->default_form_language = $this->context->language->id;
+        $helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG', 0);
+        $helper->identifier = $this->identifier;
+        $helper->submit_action = 'submitBasicSettings';
+        $helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false) .
+            '&configure=' . $this->name . '&tab_module=' . $this->tab . '&module_name=' . $this->name . '&tab=basic';
+        $helper->token = Tools::getAdminTokenLite('AdminModules');
+
+        $helper->fields_value['OPTIC_AICHAT_WIDGET_TITLE'] = Configuration::get('OPTIC_AICHAT_WIDGET_TITLE');
+        $helper->fields_value['OPTIC_AICHAT_API_KEY'] = Configuration::get('OPTIC_AICHAT_API_KEY');
+        $helper->fields_value['OPTIC_AICHAT_SYSTEM_PROMPT'] = Configuration::get('OPTIC_AICHAT_SYSTEM_PROMPT');
+        $helper->fields_value['OPTIC_AICHAT_ENABLE_PAGE_CONTEXT'] = Configuration::get('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
+        $helper->fields_value['OPTIC_AICHAT_PRIMARY_COLOR'] = Configuration::get('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD';
+        $helper->fields_value['OPTIC_AICHAT_SECONDARY_COLOR'] = Configuration::get('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
+        $helper->fields_value['OPTIC_AICHAT_BUTTON_TEXT_COLOR'] = Configuration::get('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
+        $helper->fields_value['OPTIC_AICHAT_AUTO_LANGUAGE'] = Configuration::get('OPTIC_AICHAT_AUTO_LANGUAGE');
+        $helper->fields_value['OPTIC_AICHAT_FALLBACK_LANG'] = Configuration::get('OPTIC_AICHAT_FALLBACK_LANG') ?: 'el';
+
+        return $helper->generateForm([$fields_form]);
+    }
+
+    private function renderXMLFeedForm()
+    {
+        // This will contain the existing XML upload and field mapping forms
+        return $this->renderForm();
+    }
+
+    private function renderKnowledgeBaseForm()
+    {
+        $fields_form = [
+            'form' => [
+                'legend' => [
+                    'title' => $this->l('Knowledge Base Settings'),
+                    'icon' => 'icon-book',
+                ],
+                'input' => [
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Include On-Sale Products'),
+                        'name' => 'OPTIC_AICHAT_INCLUDE_SALES',
+                        'desc' => $this->l('Show current promotions when users ask about sales'),
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                    ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Include Active Coupons'),
+                        'name' => 'OPTIC_AICHAT_INCLUDE_COUPONS',
+                        'desc' => $this->l('Show available discount codes'),
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                    ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Include Stock Information'),
+                        'name' => 'OPTIC_AICHAT_INCLUDE_STOCK',
+                        'desc' => $this->l('Mention low stock warnings'),
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                    ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Include Category Structure'),
+                        'name' => 'OPTIC_AICHAT_INCLUDE_CATEGORIES',
+                        'desc' => $this->l('Share catalog organization'),
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                    ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Include CMS Pages'),
+                        'name' => 'OPTIC_AICHAT_INCLUDE_CMS',
+                        'desc' => $this->l('Include store information pages'),
+                        'is_bool' => true,
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                    ],
+                    [
+                        'type' => 'textarea',
+                        'label' => $this->l('Store Policies'),
+                        'name' => 'OPTIC_AICHAT_STORE_POLICIES',
+                        'rows' => 8,
+                        'desc' => $this->l('Shipping, returns, payment information'),
+                    ],
+                    [
+                        'type' => 'textarea',
+                        'label' => $this->l('FAQ'),
+                        'name' => 'OPTIC_AICHAT_FAQ',
+                        'rows' => 8,
+                        'desc' => $this->l('Frequently asked questions'),
+                    ],
+                ],
+                'submit' => [
+                    'title' => $this->l('Save Knowledge Base'),
+                    'name' => 'submitKnowledgeBase',
+                ],
+            ],
+        ];
+
+        $helper = new HelperForm();
+        $helper->show_toolbar = false;
+        $helper->table = $this->table;
+        $helper->module = $this;
+        $helper->default_form_language = $this->context->language->id;
+        $helper->allow_employee_form_lang = Configuration::get('PS_BO_ALLOW_EMPLOYEE_FORM_LANG', 0);
+        $helper->identifier = $this->identifier;
+        $helper->submit_action = 'submitKnowledgeBase';
+        $helper->currentIndex = $this->context->link->getAdminLink('AdminModules', false) .
+            '&configure=' . $this->name . '&tab_module=' . $this->tab . '&module_name=' . $this->name . '&tab=knowledge';
+        $helper->token = Tools::getAdminTokenLite('AdminModules');
+
+        $helper->fields_value['OPTIC_AICHAT_INCLUDE_SALES'] = Configuration::get('OPTIC_AICHAT_INCLUDE_SALES');
+        $helper->fields_value['OPTIC_AICHAT_INCLUDE_COUPONS'] = Configuration::get('OPTIC_AICHAT_INCLUDE_COUPONS');
+        $helper->fields_value['OPTIC_AICHAT_INCLUDE_STOCK'] = Configuration::get('OPTIC_AICHAT_INCLUDE_STOCK');
+        $helper->fields_value['OPTIC_AICHAT_INCLUDE_CATEGORIES'] = Configuration::get('OPTIC_AICHAT_INCLUDE_CATEGORIES');
+        $helper->fields_value['OPTIC_AICHAT_INCLUDE_CMS'] = Configuration::get('OPTIC_AICHAT_INCLUDE_CMS');
+        $helper->fields_value['OPTIC_AICHAT_STORE_POLICIES'] = Configuration::get('OPTIC_AICHAT_STORE_POLICIES');
+        $helper->fields_value['OPTIC_AICHAT_FAQ'] = Configuration::get('OPTIC_AICHAT_FAQ');
+
+        return $helper->generateForm([$fields_form]);
     }
 }
