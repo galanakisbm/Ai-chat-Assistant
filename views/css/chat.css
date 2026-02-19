@@ -409,3 +409,54 @@
         max-width: 100%;
     }
 }
+
+/* OpticWeb Branding Footer */
+.optic-chat-footer {
+    padding: 8px 12px;
+    background: #f9f9f9;
+    border-top: 1px solid #e0e0e0;
+    text-align: center;
+}
+
+.optic-branding {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    align-items: center;
+}
+
+.optic-branding a {
+    transition: color 0.2s;
+}
+
+.optic-branding a:hover {
+    color: var(--optic-chat-primary) !important;
+    text-decoration: underline;
+}
+
+.optic-branding-powered {
+    font-size: 10px;
+    color: #999;
+}
+
+.optic-branding-link {
+    color: #268CCD;
+    text-decoration: none;
+}
+
+.optic-branding-contact {
+    font-size: 9px;
+    color: #aaa;
+}
+
+.optic-branding-contact-link {
+    color: inherit;
+}
+
+/* Custom Logo in Header */
+.optic-chat-logo {
+    max-height: 40px;
+    max-width: 150px;
+    object-fit: contain;
+    margin-right: 10px;
+}

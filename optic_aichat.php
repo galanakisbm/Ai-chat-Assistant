@@ -109,7 +109,9 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', '#ffffff') &&
             Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', $defaultMappings) &&
             Configuration::updateValue('OPTIC_AICHAT_AUTO_LANGUAGE', 1) &&
-            Configuration::updateValue('OPTIC_AICHAT_FALLBACK_LANG', 'el');
+            Configuration::updateValue('OPTIC_AICHAT_FALLBACK_LANG', 'el') &&
+            Configuration::updateValue('OPTIC_AICHAT_CUSTOM_ICON', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_CUSTOM_LOGO', '');
     }
 
     public function uninstall()
@@ -139,6 +141,8 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_INCLUDE_CMS');
         Configuration::deleteByName('OPTIC_AICHAT_STORE_POLICIES');
         Configuration::deleteByName('OPTIC_AICHAT_FAQ');
+        Configuration::deleteByName('OPTIC_AICHAT_CUSTOM_ICON');
+        Configuration::deleteByName('OPTIC_AICHAT_CUSTOM_LOGO');
         
         // Διαγραφή πίνακα chat logs
         Db::getInstance()->execute("DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`");
@@ -175,6 +179,54 @@ class Optic_AiChat extends Module
                 
                 $output .= $this->displayConfirmation($this->l('Basic settings saved successfully!'));
             }
+        }
+
+        // Handle Icon Upload
+        if (Tools::isSubmit('uploadChatIcon') && isset($_FILES['OPTIC_AICHAT_CUSTOM_ICON'])) {
+            $result = $this->handleImageUpload($_FILES['OPTIC_AICHAT_CUSTOM_ICON'], 'chat_icon');
+            if ($result['success']) {
+                Configuration::updateValue('OPTIC_AICHAT_CUSTOM_ICON', $result['path']);
+                $output .= $this->displayConfirmation($this->l('Chat icon uploaded successfully!'));
+            } else {
+                $output .= $this->displayError($result['error']);
+            }
+        }
+
+        // Handle Logo Upload
+        if (Tools::isSubmit('uploadChatLogo') && isset($_FILES['OPTIC_AICHAT_CUSTOM_LOGO'])) {
+            $result = $this->handleImageUpload($_FILES['OPTIC_AICHAT_CUSTOM_LOGO'], 'chat_logo');
+            if ($result['success']) {
+                Configuration::updateValue('OPTIC_AICHAT_CUSTOM_LOGO', $result['path']);
+                $output .= $this->displayConfirmation($this->l('Chat logo uploaded successfully!'));
+            } else {
+                $output .= $this->displayError($result['error']);
+            }
+        }
+
+        // Handle Delete Icon
+        if (Tools::isSubmit('deleteChatIcon')) {
+            $iconPath = Configuration::get('OPTIC_AICHAT_CUSTOM_ICON');
+            if ($iconPath && strpos($iconPath, '..') === false && strpos($iconPath, '/') !== 0) {
+                $fullPath = _PS_MODULE_DIR_ . $this->name . '/' . $iconPath;
+                if (file_exists($fullPath)) {
+                    unlink($fullPath);
+                }
+            }
+            Configuration::updateValue('OPTIC_AICHAT_CUSTOM_ICON', '');
+            $output .= $this->displayConfirmation($this->l('Chat icon deleted!'));
+        }
+
+        // Handle Delete Logo
+        if (Tools::isSubmit('deleteChatLogo')) {
+            $logoPath = Configuration::get('OPTIC_AICHAT_CUSTOM_LOGO');
+            if ($logoPath && strpos($logoPath, '..') === false && strpos($logoPath, '/') !== 0) {
+                $fullPath = _PS_MODULE_DIR_ . $this->name . '/' . $logoPath;
+                if (file_exists($fullPath)) {
+                    unlink($fullPath);
+                }
+            }
+            Configuration::updateValue('OPTIC_AICHAT_CUSTOM_LOGO', '');
+            $output .= $this->displayConfirmation($this->l('Chat logo deleted!'));
         }
         
         // Handle XML Upload (separate button)
@@ -335,14 +387,24 @@ class Optic_AiChat extends Module
     {
         $shop = $this->context->shop;
         
-        // Get shop logo properly
-        $logoPath = Configuration::get('PS_LOGO');
-        $shopLogo = $this->context->link->getMediaLink(_PS_IMG_DIR_ . $logoPath);
+        // Get custom icon and logo
+        $customIcon = Configuration::get('OPTIC_AICHAT_CUSTOM_ICON');
+        $customLogo = Configuration::get('OPTIC_AICHAT_CUSTOM_LOGO');
+        
+        $chatIcon = $customIcon ? $this->_path . $customIcon : '';
+        $chatLogo = $customLogo ? $this->_path . $customLogo : '';
+        
+        // Fallback to shop logo if no custom logo uploaded
+        if (!$chatLogo) {
+            $logoPath = Configuration::get('PS_LOGO');
+            $chatLogo = $this->context->link->getMediaLink(_PS_IMG_DIR_ . $logoPath);
+        }
         
         $this->context->smarty->assign([
             'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE') ?: 'AI Assistant',
             'welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊',
-            'shop_logo' => $shopLogo,
+            'chat_icon' => $chatIcon,
+            'chat_logo' => $chatLogo,
             'shop_name' => $shop->name,
             'optic_custom_css' => isset($this->context->smarty->tpl_vars['optic_custom_css']) 
                 ? $this->context->smarty->tpl_vars['optic_custom_css']->value 
@@ -573,6 +635,56 @@ class Optic_AiChat extends Module
         } catch (Exception $e) {
             return false;
         }
+    }
+
+    /**
+     * Handle image uploads (Icon/Logo)
+     */
+    private function handleImageUpload($file, $prefix)
+    {
+        $uploadDir = _PS_MODULE_DIR_ . $this->name . '/uploads/';
+        
+        if (!file_exists($uploadDir)) {
+            mkdir($uploadDir, 0750, true);
+        }
+
+        // Validate file type against allowlist
+        $allowedTypes = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/jpg'];
+        if (!in_array($file['type'], $allowedTypes)) {
+            return ['success' => false, 'error' => $this->l('Invalid file type. Only PNG, SVG, JPG allowed.')];
+        }
+
+        // Validate file size (max 2MB)
+        if ($file['size'] > 2 * 1024 * 1024) {
+            return ['success' => false, 'error' => $this->l('File too large. Maximum 2MB.')];
+        }
+
+        // Validate actual file content for non-SVG files
+        if ($file['type'] !== 'image/svg+xml') {
+            $imageInfo = @getimagesize($file['tmp_name']);
+            if ($imageInfo === false) {
+                return ['success' => false, 'error' => $this->l('Invalid image file.')];
+            }
+        }
+
+        // Sanitize extension against allowlist
+        $allowedExtensions = ['png', 'svg', 'jpg', 'jpeg'];
+        $extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($extension, $allowedExtensions)) {
+            return ['success' => false, 'error' => $this->l('Invalid file extension.')];
+        }
+
+        $filename = $prefix . '_' . time() . '.' . $extension;
+        $targetFile = $uploadDir . $filename;
+        
+        if (move_uploaded_file($file['tmp_name'], $targetFile)) {
+            return [
+                'success' => true,
+                'path' => 'uploads/' . $filename
+            ];
+        }
+        
+        return ['success' => false, 'error' => $this->l('Failed to upload file.')];
     }
 
     /**
@@ -1178,6 +1290,18 @@ class Optic_AiChat extends Module
                             'name' => 'name'
                         ],
                     ],
+                    [
+                        'type' => 'html',
+                        'label' => $this->l('Custom Chat Icon'),
+                        'name' => 'OPTIC_AICHAT_CUSTOM_ICON_HTML',
+                        'html_content' => $this->renderIconUploadField(),
+                    ],
+                    [
+                        'type' => 'html',
+                        'label' => $this->l('Custom Chat Logo'),
+                        'name' => 'OPTIC_AICHAT_CUSTOM_LOGO_HTML',
+                        'html_content' => $this->renderLogoUploadField(),
+                    ],
                 ],
                 'submit' => [
                     'title' => $this->l('Save Basic Settings'),
@@ -1503,5 +1627,55 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_FAQ'] = Configuration::get('OPTIC_AICHAT_FAQ');
 
         return $helper->generateForm([$fields_form]);
+    }
+
+    private function renderIconUploadField()
+    {
+        $currentIcon = Configuration::get('OPTIC_AICHAT_CUSTOM_ICON');
+        $actionUrl = htmlspecialchars(AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&section=basic', ENT_QUOTES, 'UTF-8');
+        $html = '<form method="post" enctype="multipart/form-data" action="' . $actionUrl . '">';
+        
+        if ($currentIcon && strpos($currentIcon, '..') === false && file_exists(_PS_MODULE_DIR_ . $this->name . '/' . $currentIcon)) {
+            $iconUrl = htmlspecialchars($this->_path . $currentIcon, ENT_QUOTES, 'UTF-8');
+            $html .= '<div style="margin-bottom: 10px;">';
+            $html .= '<img src="' . $iconUrl . '" style="max-width: 50px; max-height: 50px; border: 1px solid #ccc; padding: 5px;">';
+            $html .= '<button type="submit" name="deleteChatIcon" class="btn btn-danger btn-sm" style="margin-left: 10px;">';
+            $html .= '<i class="icon-trash"></i> ' . $this->l('Delete');
+            $html .= '</button></div>';
+        }
+        
+        $html .= '<input type="file" name="OPTIC_AICHAT_CUSTOM_ICON" accept=".png,.svg,.jpg,.jpeg">';
+        $html .= '<button type="submit" name="uploadChatIcon" class="btn btn-primary btn-sm" style="margin-top: 5px;">';
+        $html .= '<i class="icon-upload"></i> ' . $this->l('Upload Icon');
+        $html .= '</button>';
+        $html .= '<p class="help-block">' . $this->l('PNG, SVG, or JPG. Max 2MB. Recommended: 64x64px') . '</p>';
+        $html .= '</form>';
+        
+        return $html;
+    }
+
+    private function renderLogoUploadField()
+    {
+        $currentLogo = Configuration::get('OPTIC_AICHAT_CUSTOM_LOGO');
+        $actionUrl = htmlspecialchars(AdminController::$currentIndex . '&configure=' . $this->name . '&token=' . Tools::getAdminTokenLite('AdminModules') . '&section=basic', ENT_QUOTES, 'UTF-8');
+        $html = '<form method="post" enctype="multipart/form-data" action="' . $actionUrl . '">';
+        
+        if ($currentLogo && strpos($currentLogo, '..') === false && file_exists(_PS_MODULE_DIR_ . $this->name . '/' . $currentLogo)) {
+            $logoUrl = htmlspecialchars($this->_path . $currentLogo, ENT_QUOTES, 'UTF-8');
+            $html .= '<div style="margin-bottom: 10px;">';
+            $html .= '<img src="' . $logoUrl . '" style="max-width: 200px; max-height: 60px; border: 1px solid #ccc; padding: 5px;">';
+            $html .= '<button type="submit" name="deleteChatLogo" class="btn btn-danger btn-sm" style="margin-left: 10px;">';
+            $html .= '<i class="icon-trash"></i> ' . $this->l('Delete');
+            $html .= '</button></div>';
+        }
+        
+        $html .= '<input type="file" name="OPTIC_AICHAT_CUSTOM_LOGO" accept=".png,.svg,.jpg,.jpeg">';
+        $html .= '<button type="submit" name="uploadChatLogo" class="btn btn-primary btn-sm" style="margin-top: 5px;">';
+        $html .= '<i class="icon-upload"></i> ' . $this->l('Upload Logo');
+        $html .= '</button>';
+        $html .= '<p class="help-block">' . $this->l('PNG, SVG, or JPG. Max 2MB. Recommended: 200x60px') . '</p>';
+        $html .= '</form>';
+        
+        return $html;
     }
 }
