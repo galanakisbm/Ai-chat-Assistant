@@ -47,6 +47,12 @@ class Optic_AiChat extends Module
         
         Db::getInstance()->execute($sql);
         
+        // Δημιουργία φακέλου για uploads
+        $uploadDir = _PS_MODULE_DIR_ . $this->name . '/uploads/';
+        if (!file_exists($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        
         // Ορισμός default ρυθμίσεων κατά την εγκατάσταση
         return parent::install() &&
             $this->registerHook('displayHeader') &&
@@ -54,7 +60,10 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_WIDGET_TITLE', 'OpticWeb Assistant') &&
             Configuration::updateValue('OPTIC_AICHAT_SYSTEM_PROMPT', 'Είσαι ένας ευγενικός βοηθός για το κατάστημά μας. Απάντησε σύντομα και στα Ελληνικά.') &&
             Configuration::updateValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT', 1) &&
-            Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', '');
+            Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_PRIMARY_COLOR', '#268CCD') &&
+            Configuration::updateValue('OPTIC_AICHAT_SECONDARY_COLOR', '#1a6ba3') &&
+            Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', '#ffffff');
     }
 
     public function uninstall()
@@ -65,6 +74,11 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_WIDGET_TITLE');
         Configuration::deleteByName('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
         Configuration::deleteByName('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
+        Configuration::deleteByName('OPTIC_AICHAT_PRIMARY_COLOR');
+        Configuration::deleteByName('OPTIC_AICHAT_SECONDARY_COLOR');
+        Configuration::deleteByName('OPTIC_AICHAT_BUTTON_TEXT_COLOR');
+        Configuration::deleteByName('OPTIC_AICHAT_XML_PATH');
+        Configuration::deleteByName('OPTIC_AICHAT_PRODUCTS_INDEXED');
         
         // Διαγραφή πίνακα chat logs
         $sql = "DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`";
@@ -87,6 +101,11 @@ class Optic_AiChat extends Module
             $title = Tools::getValue('OPTIC_AICHAT_WIDGET_TITLE');
             $enablePageContext = Tools::getValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
             $pageContextTemplate = Tools::getValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
+            
+            // NEW: Color values
+            $primaryColor = Tools::getValue('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD';
+            $secondaryColor = Tools::getValue('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
+            $buttonTextColor = Tools::getValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
 
             if (!$apiKey || empty($apiKey)) {
                 $output .= $this->displayError($this->l('Παρακαλώ εισάγετε το API Key.'));
@@ -96,6 +115,22 @@ class Optic_AiChat extends Module
                 Configuration::updateValue('OPTIC_AICHAT_WIDGET_TITLE', $title);
                 Configuration::updateValue('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT', (int)$enablePageContext);
                 Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', $pageContextTemplate);
+                
+                // Save colors
+                Configuration::updateValue('OPTIC_AICHAT_PRIMARY_COLOR', $primaryColor);
+                Configuration::updateValue('OPTIC_AICHAT_SECONDARY_COLOR', $secondaryColor);
+                Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', $buttonTextColor);
+
+                // Handle XML upload
+                if (isset($_FILES['OPTIC_AICHAT_PRODUCT_FEED']) && $_FILES['OPTIC_AICHAT_PRODUCT_FEED']['size'] > 0) {
+                    $uploadResult = $this->handleXMLUpload($_FILES['OPTIC_AICHAT_PRODUCT_FEED']);
+                    if ($uploadResult) {
+                        $output .= $this->displayConfirmation($this->l('XML file uploaded and indexed successfully.'));
+                    } else {
+                        $output .= $this->displayError($this->l('Failed to upload XML file. Please ensure it is a valid XML file.'));
+                    }
+                }
+                
                 $output .= $this->displayConfirmation($this->l('Οι ρυθμίσεις αποθηκεύτηκαν.'));
             }
         }
@@ -156,6 +191,35 @@ class Optic_AiChat extends Module
                         'desc' => $this->l('Template for page information. Available variables: {PAGE_TITLE}, {PAGE_URL}, {PAGE_TYPE}, {PRODUCT_NAME}, {PRODUCT_PRICE}, {CATEGORY_NAME}'),
                         'required' => false
                     ],
+                    // NEW: Color Customization
+                    [
+                        'type' => 'color',
+                        'label' => $this->l('Primary Color'),
+                        'name' => 'OPTIC_AICHAT_PRIMARY_COLOR',
+                        'desc' => $this->l('Main chat color (buttons, header)'),
+                        'size' => 20,
+                    ],
+                    [
+                        'type' => 'color',
+                        'label' => $this->l('Secondary Color'),
+                        'name' => 'OPTIC_AICHAT_SECONDARY_COLOR',
+                        'desc' => $this->l('Secondary accent color'),
+                        'size' => 20,
+                    ],
+                    [
+                        'type' => 'color',
+                        'label' => $this->l('Button Text Color'),
+                        'name' => 'OPTIC_AICHAT_BUTTON_TEXT_COLOR',
+                        'desc' => $this->l('Text color on buttons (white/black)'),
+                        'size' => 20,
+                    ],
+                    // NEW: XML Product Feed
+                    [
+                        'type' => 'file',
+                        'label' => $this->l('Product Feed (XML)'),
+                        'name' => 'OPTIC_AICHAT_PRODUCT_FEED',
+                        'desc' => $this->l('Upload XML file with products for faster search (optional)'),
+                    ],
                 ],
                 'submit' => [
                     'title' => $this->l('Αποθήκευση'),
@@ -181,6 +245,9 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_SYSTEM_PROMPT'] = Configuration::get('OPTIC_AICHAT_SYSTEM_PROMPT');
         $helper->fields_value['OPTIC_AICHAT_ENABLE_PAGE_CONTEXT'] = Configuration::get('OPTIC_AICHAT_ENABLE_PAGE_CONTEXT');
         $helper->fields_value['OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE'] = Configuration::get('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE');
+        $helper->fields_value['OPTIC_AICHAT_PRIMARY_COLOR'] = Configuration::get('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD';
+        $helper->fields_value['OPTIC_AICHAT_SECONDARY_COLOR'] = Configuration::get('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
+        $helper->fields_value['OPTIC_AICHAT_BUTTON_TEXT_COLOR'] = Configuration::get('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
 
         return $helper->generateForm([$fields_form]);
     }
@@ -196,6 +263,24 @@ class Optic_AiChat extends Module
         // Προσθήκη Markdown parser για rendering bot responses  
         $this->context->controller->addJS('https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js');
 
+        // Get custom colors
+        $primaryColor = Configuration::get('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD';
+        $secondaryColor = Configuration::get('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
+        $buttonTextColor = Configuration::get('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
+
+        // Inject CSS variables
+        $customCSS = "
+        <style>
+        :root {
+            --optic-chat-primary: {$primaryColor};
+            --optic-chat-secondary: {$secondaryColor};
+            --optic-chat-button-text: {$buttonTextColor};
+        }
+        </style>
+        ";
+        
+        $this->context->smarty->assign('optic_custom_css', $customCSS);
+
         Media::addJsDef([
             'optic_chat_ajax_url' => $this->context->link->getModuleLink('optic_aichat', 'ajax')
         ]);
@@ -205,9 +290,66 @@ class Optic_AiChat extends Module
     {
         // Περνάμε τον δυναμικό τίτλο στο TPL
         $this->context->smarty->assign([
-            'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE', 'OpticWeb Assistant')
+            'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE', 'OpticWeb Assistant'),
+            'shop' => $this->context->shop,
+            'optic_custom_css' => $this->context->smarty->getTemplateVars('optic_custom_css'),
         ]);
         
         return $this->display(__FILE__, 'views/templates/hook/chat_widget.tpl');
+    }
+
+    /**
+     * Handle XML file upload
+     */
+    private function handleXMLUpload($file)
+    {
+        $uploadDir = _PS_MODULE_DIR_ . $this->name . '/uploads/';
+        
+        if (!file_exists($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        if ($file['type'] === 'text/xml' || $file['type'] === 'application/xml') {
+            $targetFile = $uploadDir . 'products.xml';
+            
+            if (move_uploaded_file($file['tmp_name'], $targetFile)) {
+                Configuration::updateValue('OPTIC_AICHAT_XML_PATH', $targetFile);
+                
+                // Parse and cache the XML
+                $this->indexXMLProducts($targetFile);
+                
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * Index XML products to JSON cache
+     */
+    private function indexXMLProducts($xmlPath)
+    {
+        $xml = simplexml_load_file($xmlPath);
+        $products = [];
+        
+        foreach ($xml->product as $product) {
+            $products[] = [
+                'id' => (string)$product->id,
+                'name' => (string)$product->name,
+                'price' => (string)$product->price,
+                'image' => (string)$product->image,
+                'url' => (string)$product->url,
+                'description' => (string)$product->description,
+                'availability' => (string)$product->availability,
+                'categories' => (string)$product->categories,
+            ];
+        }
+        
+        // Cache as JSON for faster access
+        $cacheFile = _PS_MODULE_DIR_ . $this->name . '/uploads/products_cache.json';
+        file_put_contents($cacheFile, json_encode($products));
+        
+        Configuration::updateValue('OPTIC_AICHAT_PRODUCTS_INDEXED', count($products));
     }
 }

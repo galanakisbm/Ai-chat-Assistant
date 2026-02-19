@@ -215,23 +215,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function saveMessageToStorage(data, className) {
         let history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
-        // Store simplified version for history context
-        let text;
-        if (typeof data === 'string') {
-            text = data;
-        } else if (data.type === 'text') {
-            text = data.content;
-        } else if (data.type === 'mixed') {
-            // Extract summary from mixed content for history
-            const textParts = data.content
-                .filter(item => item.type === 'text')
-                .map(item => item.text);
-            const productCount = data.content.filter(item => item.type === 'product').length;
-            text = textParts.join(' ') + (productCount > 0 ? ` [${productCount} products]` : '');
-        } else {
-            text = '[Structured response]';
-        }
-        history.push({ text: text, class: className });
+        // Store the actual data structure for proper restoration
+        history.push({ text: JSON.stringify(data), class: className });
         if (history.length > 50) history = history.slice(-50);
         localStorage.setItem('optic_chat_history', JSON.stringify(history));
     }

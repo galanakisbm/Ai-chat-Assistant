@@ -293,6 +293,15 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
     private function searchProducts($query)
     {
         $id_lang = Context::getContext()->language->id;
+        
+        // Try XML first (faster)
+        $xmlProducts = $this->searchProductsFromXML($query);
+        
+        if (!empty($xmlProducts)) {
+            return $xmlProducts;
+        }
+        
+        // Fallback to database
         $searchResults = Search::find($id_lang, $query, 1, 8, 'position', 'desc');
         
         $products = [];
@@ -327,6 +336,39 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             }
         }
         return empty($products) ? "Δεν βρέθηκαν προϊόντα." : $products;
+    }
+
+    /**
+     * Search products from XML cache
+     */
+    private function searchProductsFromXML($query)
+    {
+        $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
+        
+        if (!file_exists($cacheFile)) {
+            return [];
+        }
+        
+        $products = json_decode(file_get_contents($cacheFile), true);
+        $results = [];
+        $queryLower = mb_strtolower($query);
+        
+        foreach ($products as $product) {
+            $nameLower = mb_strtolower($product['name']);
+            $descLower = mb_strtolower($product['description']);
+            $catsLower = mb_strtolower($product['categories']);
+            
+            // Fuzzy search
+            if (strpos($nameLower, $queryLower) !== false || 
+                strpos($descLower, $queryLower) !== false ||
+                strpos($catsLower, $queryLower) !== false) {
+                $results[] = $product;
+            }
+            
+            if (count($results) >= 5) break;
+        }
+        
+        return $results;
     }
 
     private function getLastOrder()

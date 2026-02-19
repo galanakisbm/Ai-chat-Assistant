@@ -1,5 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* CSS Variables for Customization */
+:root {
+    --optic-chat-primary: #268CCD;
+    --optic-chat-secondary: #1a6ba3;
+    --optic-chat-button-text: #ffffff;
+    --optic-chat-bg: #f8f9fb;
+    --optic-chat-shadow: rgba(0, 0, 0, 0.15);
+}
+
 /* Base Styles */
 #optic-chat-container, 
 #optic-chat-container * { 
@@ -12,8 +21,8 @@
     position: fixed;
     bottom: 24px;
     right: 24px;
-    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--optic-chat-primary) 0%, var(--optic-chat-secondary) 100%);
+    color: var(--optic-chat-button-text);
     border: none;
     border-radius: 50%;
     width: 64px;
@@ -41,7 +50,7 @@
     max-height: calc(100vh - 140px);
     background: white;
     border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 20px 60px var(--optic-chat-shadow);
     display: flex;
     flex-direction: column;
     z-index: 9998;
@@ -63,8 +72,8 @@
 
 /* Header - Gradient Design */
 .optic-chat-header {
-    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--optic-chat-primary) 0%, var(--optic-chat-secondary) 100%);
+    color: var(--optic-chat-button-text);
     padding: 20px 24px;
     display: flex;
     justify-content: space-between;
@@ -92,7 +101,7 @@
 #optic-chat-close {
     background: rgba(255, 255, 255, 0.2);
     border: none;
-    color: white;
+    color: var(--optic-chat-button-text);
     font-size: 24px;
     cursor: pointer;
     width: 36px;
@@ -114,7 +123,7 @@
     flex: 1;
     padding: 20px;
     overflow-y: auto;
-    background: #f8f9fb;
+    background: var(--optic-chat-bg);
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -140,12 +149,7 @@
 
 /* Message Bubbles - Modern Design */
 .message {
-    padding: 12px 16px;
-    border-radius: 16px;
     max-width: 85%;
-    font-size: 15px;
-    line-height: 1.5;
-    word-wrap: break-word;
     animation: messageSlideIn 0.3s ease;
 }
 
@@ -161,23 +165,31 @@
 }
 
 .user-message {
-    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
-    color: white;
-    align-self: flex-end;
+    background: linear-gradient(135deg, var(--optic-chat-primary) 0%, var(--optic-chat-secondary) 100%);
+    color: var(--optic-chat-button-text);
+    padding: 12px 16px;
+    border-radius: 16px;
     border-bottom-right-radius: 4px;
+    align-self: flex-end;
+    font-size: 15px;
+    line-height: 1.5;
+    word-wrap: break-word;
 }
 
 .bot-message {
     background: white;
     color: #2d3748;
-    align-self: flex-start;
+    padding: 12px 16px;
+    border-radius: 16px;
     border-bottom-left-radius: 4px;
+    align-self: flex-start;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .bot-text {
     margin-bottom: 12px;
     line-height: 1.6;
+    font-size: 15px;
 }
 
 .bot-text:last-child {
@@ -193,6 +205,7 @@
     margin: 8px 0;
     transition: all 0.3s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    max-width: 100%;
 }
 
 .product-card:hover {
@@ -235,14 +248,14 @@
 .product-price {
     font-size: 20px;
     font-weight: 700;
-    color: #268CCD;
+    color: var(--optic-chat-primary);
     margin-bottom: 12px;
 }
 
 .product-link {
     display: inline-block;
-    background: #268CCD;
-    color: white;
+    background: var(--optic-chat-primary);
+    color: var(--optic-chat-button-text);
     padding: 10px 20px;
     border-radius: 8px;
     text-decoration: none;
@@ -252,7 +265,7 @@
 }
 
 .product-link:hover {
-    background: #1a6ba3;
+    background: var(--optic-chat-secondary);
     transform: translateX(4px);
 }
 
@@ -308,9 +321,9 @@
 }
 
 .quick-reply-btn:hover {
-    background: #268CCD;
-    color: white;
-    border-color: #268CCD;
+    background: var(--optic-chat-primary);
+    color: var(--optic-chat-button-text);
+    border-color: var(--optic-chat-primary);
     transform: translateY(-1px);
 }
 
@@ -335,13 +348,13 @@
 }
 
 #optic-chat-input:focus {
-    border-color: #268CCD;
+    border-color: var(--optic-chat-primary);
     background: white;
 }
 
 #optic-chat-send {
-    background: linear-gradient(135deg, #268CCD 0%, #1a6ba3 100%);
-    color: white;
+    background: linear-gradient(135deg, var(--optic-chat-primary) 0%, var(--optic-chat-secondary) 100%);
+    color: var(--optic-chat-button-text);
     border: none;
     border-radius: 12px;
     padding: 12px 24px;
@@ -390,5 +403,9 @@
     
     .product-image {
         height: 150px;
+    }
+    
+    .product-card {
+        max-width: 100%;
     }
 }
