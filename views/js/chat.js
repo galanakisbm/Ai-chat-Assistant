@@ -144,7 +144,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     gfm: true      // GitHub Flavored Markdown
                 });
             }
-            msgDiv.innerHTML = marked.parse(text);
+            
+            // Parse Markdown to HTML
+            const html = marked.parse(text);
+            
+            // Sanitize with DOMPurify if available (defense in depth)
+            if (typeof DOMPurify !== 'undefined') {
+                msgDiv.innerHTML = DOMPurify.sanitize(html);
+            } else {
+                msgDiv.innerHTML = html;
+            }
         } else {
             msgDiv.innerHTML = text;
         }
