@@ -134,7 +134,21 @@ document.addEventListener('DOMContentLoaded', function() {
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message ' + className;
         msgDiv.id = 'msg-' + Date.now() + Math.random(); 
-        msgDiv.innerHTML = text; 
+        
+        // Αν είναι bot message και το marked.js έχει φορτώσει, κάνε parse το Markdown
+        if (className.includes('bot-message') && typeof marked !== 'undefined') {
+            // Configure marked for safe rendering
+            if (marked.setOptions) {
+                marked.setOptions({
+                    breaks: true,  // Convert \n to <br>
+                    gfm: true      // GitHub Flavored Markdown
+                });
+            }
+            msgDiv.innerHTML = marked.parse(text);
+        } else {
+            msgDiv.innerHTML = text;
+        }
+        
         messagesArea.appendChild(msgDiv);
         return msgDiv.id;
     }
