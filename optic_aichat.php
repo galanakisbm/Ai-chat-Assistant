@@ -263,18 +263,30 @@ class Optic_AiChat extends Module
         // Προσθήκη Markdown parser για rendering bot responses  
         $this->context->controller->addJS('https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js');
 
-        // Get custom colors
+        // Get custom colors and validate them
         $primaryColor = Configuration::get('OPTIC_AICHAT_PRIMARY_COLOR') ?: '#268CCD';
         $secondaryColor = Configuration::get('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
         $buttonTextColor = Configuration::get('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
+        
+        // Validate color format (hex colors only)
+        $colorPattern = '/^#[0-9A-Fa-f]{6}$/';
+        if (!preg_match($colorPattern, $primaryColor)) {
+            $primaryColor = '#268CCD';
+        }
+        if (!preg_match($colorPattern, $secondaryColor)) {
+            $secondaryColor = '#1a6ba3';
+        }
+        if (!preg_match($colorPattern, $buttonTextColor)) {
+            $buttonTextColor = '#ffffff';
+        }
 
-        // Inject CSS variables
+        // Inject CSS variables (colors are now validated)
         $customCSS = "
         <style>
         :root {
-            --optic-chat-primary: {$primaryColor};
-            --optic-chat-secondary: {$secondaryColor};
-            --optic-chat-button-text: {$buttonTextColor};
+            --optic-chat-primary: " . htmlspecialchars($primaryColor, ENT_QUOTES, 'UTF-8') . ";
+            --optic-chat-secondary: " . htmlspecialchars($secondaryColor, ENT_QUOTES, 'UTF-8') . ";
+            --optic-chat-button-text: " . htmlspecialchars($buttonTextColor, ENT_QUOTES, 'UTF-8') . ";
         }
         </style>
         ";
@@ -330,26 +342,50 @@ class Optic_AiChat extends Module
      */
     private function indexXMLProducts($xmlPath)
     {
-        $xml = simplexml_load_file($xmlPath);
-        $products = [];
+        // Prevent XXE attacks
+        $previousValue = libxml_disable_entity_loader(true);
         
-        foreach ($xml->product as $product) {
-            $products[] = [
-                'id' => (string)$product->id,
-                'name' => (string)$product->name,
-                'price' => (string)$product->price,
-                'image' => (string)$product->image,
-                'url' => (string)$product->url,
-                'description' => (string)$product->description,
-                'availability' => (string)$product->availability,
-                'categories' => (string)$product->categories,
-            ];
+        try {
+            $xml = simplexml_load_file($xmlPath, 'SimpleXMLElement', LIBXML_NOCDATA);
+            
+            if ($xml === false) {
+                libxml_disable_entity_loader($previousValue);
+                return false;
+            }
+            
+            $products = [];
+            
+            foreach ($xml->product as $product) {
+                $products[] = [
+                    'id' => (string)$product->id,
+                    'name' => (string)$product->name,
+                    'price' => (string)$product->price,
+                    'image' => (string)$product->image,
+                    'url' => (string)$product->url,
+                    'description' => (string)$product->description,
+                    'availability' => (string)$product->availability,
+                    'categories' => (string)$product->categories,
+                ];
+            }
+            
+            // Cache as JSON for faster access
+            $cacheFile = _PS_MODULE_DIR_ . $this->name . '/uploads/products_cache.json';
+            $result = file_put_contents($cacheFile, json_encode($products));
+            
+            if ($result === false) {
+                error_log('OpticAiChat: Failed to write products cache file');
+                libxml_disable_entity_loader($previousValue);
+                return false;
+            }
+            
+            Configuration::updateValue('OPTIC_AICHAT_PRODUCTS_INDEXED', count($products));
+            
+            libxml_disable_entity_loader($previousValue);
+            return true;
+        } catch (Exception $e) {
+            error_log('OpticAiChat: Error indexing XML products - ' . $e->getMessage());
+            libxml_disable_entity_loader($previousValue);
+            return false;
         }
-        
-        // Cache as JSON for faster access
-        $cacheFile = _PS_MODULE_DIR_ . $this->name . '/uploads/products_cache.json';
-        file_put_contents($cacheFile, json_encode($products));
-        
-        Configuration::updateValue('OPTIC_AICHAT_PRODUCTS_INDEXED', count($products));
     }
 }

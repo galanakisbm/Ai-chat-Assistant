@@ -397,7 +397,18 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             return [];
         }
         
-        $products = json_decode(file_get_contents($cacheFile), true);
+        $jsonContent = file_get_contents($cacheFile);
+        if ($jsonContent === false) {
+            error_log('OpticAiChat: Failed to read products cache file');
+            return [];
+        }
+        
+        $products = json_decode($jsonContent, true);
+        if ($products === null || !is_array($products)) {
+            error_log('OpticAiChat: Failed to parse products cache JSON');
+            return [];
+        }
+        
         $results = [];
         $queryLower = mb_strtolower($query);
         
