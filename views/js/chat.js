@@ -193,8 +193,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function escapeHtml(text) {
+        // Convert to string if not already
+        const str = text != null ? String(text) : '';
         const div = document.createElement('div');
-        div.textContent = text;
+        div.textContent = str;
         return div.innerHTML;
     }
 
@@ -253,7 +255,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (msg.text.trim().startsWith('{') && msg.text.trim().endsWith('}')) {
                             const parsed = JSON.parse(msg.text);
                             // Verify it has expected structure
-                            if (parsed.type && (parsed.content || parsed.content === '')) {
+                            if (parsed.type && parsed.hasOwnProperty('content')) {
                                 data = parsed;
                             }
                         }
