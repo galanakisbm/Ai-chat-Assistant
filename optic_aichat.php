@@ -53,6 +53,24 @@ class Optic_AiChat extends Module
             mkdir($uploadDir, 0755, true);
         }
         
+        // Install default field mappings
+        $defaultMappings = json_encode([
+            'title' => 'name',
+            'description' => 'description',
+            'short_description' => 'short_description',
+            'category' => 'category',
+            'price_sale' => 'price',
+            'price_regular' => 'regular_price',
+            'onsale' => 'onsale',
+            'sizes' => 'size',
+            'composition' => 'composition',
+            'dimensions' => 'dimension',
+            'instock' => 'instock',
+            'url' => 'url',
+            'image' => 'image',
+            'product_id' => 'id',
+        ]);
+        
         // Ορισμός default ρυθμίσεων κατά την εγκατάσταση
         return parent::install() &&
             $this->registerHook('displayHeader') &&
@@ -63,7 +81,8 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_PAGE_CONTEXT_TEMPLATE', '') &&
             Configuration::updateValue('OPTIC_AICHAT_PRIMARY_COLOR', '#268CCD') &&
             Configuration::updateValue('OPTIC_AICHAT_SECONDARY_COLOR', '#1a6ba3') &&
-            Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', '#ffffff');
+            Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', '#ffffff') &&
+            Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', $defaultMappings);
     }
 
     public function uninstall()
@@ -79,6 +98,7 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_BUTTON_TEXT_COLOR');
         Configuration::deleteByName('OPTIC_AICHAT_XML_PATH');
         Configuration::deleteByName('OPTIC_AICHAT_PRODUCTS_INDEXED');
+        Configuration::deleteByName('OPTIC_AICHAT_XML_FIELD_MAPPING');
         
         // Διαγραφή πίνακα chat logs
         $sql = "DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`";
@@ -121,13 +141,37 @@ class Optic_AiChat extends Module
                 Configuration::updateValue('OPTIC_AICHAT_SECONDARY_COLOR', $secondaryColor);
                 Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', $buttonTextColor);
 
+                // Save field mappings
+                $fieldMappings = [
+                    'product_id' => Tools::getValue('XML_FIELD_product_id') ?: 'id',
+                    'title' => Tools::getValue('XML_FIELD_title') ?: 'name',
+                    'description' => Tools::getValue('XML_FIELD_description') ?: 'description',
+                    'short_description' => Tools::getValue('XML_FIELD_short_description') ?: 'short_description',
+                    'category' => Tools::getValue('XML_FIELD_category') ?: 'category',
+                    'price_sale' => Tools::getValue('XML_FIELD_price_sale') ?: 'price',
+                    'price_regular' => Tools::getValue('XML_FIELD_price_regular') ?: 'regular_price',
+                    'onsale' => Tools::getValue('XML_FIELD_onsale') ?: 'onsale',
+                    'sizes' => Tools::getValue('XML_FIELD_sizes') ?: 'size',
+                    'composition' => Tools::getValue('XML_FIELD_composition') ?: 'composition',
+                    'dimensions' => Tools::getValue('XML_FIELD_dimensions') ?: 'dimension',
+                    'instock' => Tools::getValue('XML_FIELD_instock') ?: 'instock',
+                    'url' => Tools::getValue('XML_FIELD_url') ?: 'url',
+                    'image' => Tools::getValue('XML_FIELD_image') ?: 'image',
+                ];
+
+                Configuration::updateValue('OPTIC_AICHAT_XML_FIELD_MAPPING', json_encode($fieldMappings));
+
                 // Handle XML upload
                 if (isset($_FILES['OPTIC_AICHAT_PRODUCT_FEED']) && $_FILES['OPTIC_AICHAT_PRODUCT_FEED']['size'] > 0) {
                     $uploadResult = $this->handleXMLUpload($_FILES['OPTIC_AICHAT_PRODUCT_FEED']);
                     if ($uploadResult) {
-                        $output .= $this->displayConfirmation($this->l('XML file uploaded and indexed successfully.'));
+                        $productsIndexed = Configuration::get('OPTIC_AICHAT_PRODUCTS_INDEXED');
+                        $output .= $this->displayConfirmation(
+                            $this->l('XML uploaded and indexed successfully!') . ' ' . 
+                            $productsIndexed . ' ' . $this->l('products found.')
+                        );
                     } else {
-                        $output .= $this->displayError($this->l('Failed to upload XML file. Please ensure it is a valid XML file.'));
+                        $output .= $this->displayError($this->l('Failed to upload XML file. Please check file format.'));
                     }
                 }
                 
@@ -143,6 +187,7 @@ class Optic_AiChat extends Module
      */
     public function renderForm()
     {
+        // Main settings form
         $fields_form = [
             'form' => [
                 'legend' => [
@@ -227,6 +272,134 @@ class Optic_AiChat extends Module
             ],
         ];
 
+        // XML Field Mapping Form
+        $mapping_form = [
+            'form' => [
+                'legend' => [
+                    'title' => $this->l('XML Field Mapping'),
+                    'icon' => 'icon-list',
+                ],
+                'description' => $this->l('Map your XML fields to module fields. This allows you to use any XML format.'),
+                'input' => [
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Product ID'),
+                        'name' => 'XML_FIELD_product_id',
+                        'desc' => $this->l('XML tag for product ID'),
+                        'placeholder' => 'id',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Title'),
+                        'name' => 'XML_FIELD_title',
+                        'desc' => $this->l('XML tag for product title'),
+                        'placeholder' => 'name',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Description'),
+                        'name' => 'XML_FIELD_description',
+                        'desc' => $this->l('XML tag for full description'),
+                        'placeholder' => 'description',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Short Description'),
+                        'name' => 'XML_FIELD_short_description',
+                        'desc' => $this->l('XML tag for short description'),
+                        'placeholder' => 'short_description',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Main Category'),
+                        'name' => 'XML_FIELD_category',
+                        'desc' => $this->l('XML tag for category'),
+                        'placeholder' => 'category',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Price (with discount)'),
+                        'name' => 'XML_FIELD_price_sale',
+                        'desc' => $this->l('XML tag for sale price'),
+                        'placeholder' => 'price',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Price (without discount)'),
+                        'name' => 'XML_FIELD_price_regular',
+                        'desc' => $this->l('XML tag for regular price'),
+                        'placeholder' => 'regular_price',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('On Sale (1/0 or Y/N)'),
+                        'name' => 'XML_FIELD_onsale',
+                        'desc' => $this->l('XML tag for on-sale status'),
+                        'placeholder' => 'onsale',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Sizes (comma-separated)'),
+                        'name' => 'XML_FIELD_sizes',
+                        'desc' => $this->l('XML tag for sizes'),
+                        'placeholder' => 'size',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Composition'),
+                        'name' => 'XML_FIELD_composition',
+                        'desc' => $this->l('XML tag for composition/material'),
+                        'placeholder' => 'composition',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Dimensions (comma-separated)'),
+                        'name' => 'XML_FIELD_dimensions',
+                        'desc' => $this->l('XML tag for dimensions'),
+                        'placeholder' => 'dimension',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('In Stock (Y/N or 1/0)'),
+                        'name' => 'XML_FIELD_instock',
+                        'desc' => $this->l('XML tag for stock status'),
+                        'placeholder' => 'instock',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Product URL'),
+                        'name' => 'XML_FIELD_url',
+                        'desc' => $this->l('XML tag for product URL'),
+                        'placeholder' => 'url',
+                        'size' => 30,
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Image URL'),
+                        'name' => 'XML_FIELD_image',
+                        'desc' => $this->l('XML tag for product image'),
+                        'placeholder' => 'image',
+                        'size' => 30,
+                    ],
+                ],
+                'submit' => [
+                    'title' => $this->l('Αποθήκευση'),
+                ],
+            ],
+        ];
+
         $helper = new HelperForm();
         $helper->show_toolbar = false;
         $helper->table = $this->table;
@@ -239,7 +412,7 @@ class Optic_AiChat extends Module
             '&configure=' . $this->name . '&tab_module=' . $this->tab . '&module_name=' . $this->name;
         $helper->token = Tools::getAdminTokenLite('AdminModules');
 
-        // Φόρτωση αποθηκευμένων τιμών
+        // Φόρτωση αποθηκευμένων τιμών για main form
         $helper->fields_value['OPTIC_AICHAT_WIDGET_TITLE'] = Configuration::get('OPTIC_AICHAT_WIDGET_TITLE');
         $helper->fields_value['OPTIC_AICHAT_API_KEY'] = Configuration::get('OPTIC_AICHAT_API_KEY');
         $helper->fields_value['OPTIC_AICHAT_SYSTEM_PROMPT'] = Configuration::get('OPTIC_AICHAT_SYSTEM_PROMPT');
@@ -249,7 +422,15 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_SECONDARY_COLOR'] = Configuration::get('OPTIC_AICHAT_SECONDARY_COLOR') ?: '#1a6ba3';
         $helper->fields_value['OPTIC_AICHAT_BUTTON_TEXT_COLOR'] = Configuration::get('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
 
-        return $helper->generateForm([$fields_form]);
+        // Load field mappings
+        $mappings = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true);
+        if ($mappings) {
+            foreach ($mappings as $key => $value) {
+                $helper->fields_value['XML_FIELD_' . $key] = $value;
+            }
+        }
+
+        return $helper->generateForm([$fields_form, $mapping_form]);
     }
 
     public function hookDisplayHeader()
@@ -300,11 +481,19 @@ class Optic_AiChat extends Module
 
     public function hookDisplayFooter()
     {
-        // Περνάμε τον δυναμικό τίτλο στο TPL
+        $shop = $this->context->shop;
+        
+        // Get shop logo properly
+        $logoPath = Configuration::get('PS_LOGO');
+        $shopLogo = $this->context->link->getMediaLink(_PS_IMG_DIR_ . $logoPath);
+        
         $this->context->smarty->assign([
-            'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE', 'OpticWeb Assistant'),
-            'shop' => $this->context->shop,
-            'optic_custom_css' => $this->context->smarty->getTemplateVars('optic_custom_css'),
+            'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE') ?: 'AI Assistant',
+            'shop_logo' => $shopLogo,
+            'shop_name' => $shop->name,
+            'optic_custom_css' => isset($this->context->smarty->tpl_vars['optic_custom_css']) 
+                ? $this->context->smarty->tpl_vars['optic_custom_css']->value 
+                : '',
         ]);
         
         return $this->display(__FILE__, 'views/templates/hook/chat_widget.tpl');
@@ -353,24 +542,54 @@ class Optic_AiChat extends Module
                 return false;
             }
             
-            $products = [];
-            
-            foreach ($xml->product as $product) {
-                $products[] = [
-                    'id' => (string)$product->id,
-                    'name' => (string)$product->name,
-                    'price' => (string)$product->price,
-                    'image' => (string)$product->image,
-                    'url' => (string)$product->url,
-                    'description' => (string)$product->description,
-                    'availability' => (string)$product->availability,
-                    'categories' => (string)$product->categories,
+            // Get field mappings
+            $mappings = json_decode(Configuration::get('OPTIC_AICHAT_XML_FIELD_MAPPING'), true);
+            if (!$mappings) {
+                // Use defaults
+                $mappings = [
+                    'product_id' => 'id',
+                    'title' => 'name',
+                    'description' => 'description',
+                    'short_description' => 'short_description',
+                    'category' => 'category',
+                    'price_sale' => 'price',
+                    'price_regular' => 'regular_price',
+                    'onsale' => 'onsale',
+                    'sizes' => 'size',
+                    'composition' => 'composition',
+                    'dimensions' => 'dimension',
+                    'instock' => 'instock',
+                    'url' => 'url',
+                    'image' => 'image',
                 ];
             }
             
+            $products = [];
+            
+            foreach ($xml->product as $xmlProduct) {
+                $product = [];
+                
+                // Map each field dynamically
+                foreach ($mappings as $moduleField => $xmlTag) {
+                    if (isset($xmlProduct->$xmlTag)) {
+                        $product[$moduleField] = (string)$xmlProduct->$xmlTag;
+                    } else {
+                        $product[$moduleField] = '';
+                    }
+                }
+                
+                // Add to products array
+                $products[] = $product;
+            }
+            
             // Cache as JSON for faster access
-            $cacheFile = _PS_MODULE_DIR_ . $this->name . '/uploads/products_cache.json';
-            $result = file_put_contents($cacheFile, json_encode($products));
+            $uploadDir = _PS_MODULE_DIR_ . $this->name . '/uploads/';
+            if (!file_exists($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+            
+            $cacheFile = $uploadDir . 'products_cache.json';
+            $result = file_put_contents($cacheFile, json_encode($products, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             
             if ($result === false) {
                 error_log('OpticAiChat: Failed to write products cache file');
