@@ -6,6 +6,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const inputField = document.getElementById('optic-chat-input');
     const messagesArea = document.getElementById('optic-chat-messages');
 
+    // Configure marked.js once at startup
+    if (typeof marked !== 'undefined' && marked.setOptions) {
+        marked.setOptions({
+            breaks: true,  // Convert \n to <br>
+            gfm: true      // GitHub Flavored Markdown
+        });
+    }
+
     // 1. Load History on Start
     loadChatState();
 
@@ -134,7 +142,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message ' + className;
         msgDiv.id = 'msg-' + Date.now() + Math.random(); 
-        msgDiv.innerHTML = text; 
+        
+        // Αν είναι bot message και το marked.js έχει φορτώσει, κάνε parse το Markdown
+        if (className.includes('bot-message') && typeof marked !== 'undefined') {
+            // Parse Markdown to HTML
+            const html = marked.parse(text);
+            
+            // Sanitize with DOMPurify if available (defense in depth)
+            if (typeof DOMPurify !== 'undefined') {
+                msgDiv.innerHTML = DOMPurify.sanitize(html);
+            } else {
+                msgDiv.innerHTML = html;
+            }
+        } else {
+            msgDiv.innerHTML = text;
+        }
+        
         messagesArea.appendChild(msgDiv);
         return msgDiv.id;
     }

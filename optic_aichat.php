@@ -189,6 +189,12 @@ class Optic_AiChat extends Module
     {
         $this->context->controller->addCSS($this->_path . 'views/css/chat.css', 'all');
         $this->context->controller->addJS($this->_path . 'views/js/chat.js');
+        
+        // Προσθήκη DOMPurify για XSS protection
+        $this->context->controller->addJS('https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js');
+        
+        // Προσθήκη Markdown parser για rendering bot responses  
+        $this->context->controller->addJS('https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js');
 
         Media::addJsDef([
             'optic_chat_ajax_url' => $this->context->link->getModuleLink('optic_aichat', 'ajax')

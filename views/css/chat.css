@@ -138,3 +138,97 @@
         padding: 8px;
     }
 }
+
+/* Markdown Rendering Styles for Bot Messages */
+.bot-message img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 10px 0;
+    display: block;
+}
+
+.bot-message h1,
+.bot-message h2,
+.bot-message h3,
+.bot-message h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 12px 0 8px 0;
+    color: #268CCD;
+}
+
+.bot-message h1 { font-size: 18px; }
+.bot-message h2 { font-size: 17px; }
+
+.bot-message p {
+    margin: 8px 0;
+    line-height: 1.6;
+}
+
+.bot-message hr {
+    margin: 15px 0;
+    border: none;
+    border-top: 1px solid #e0e0e0;
+}
+
+.bot-message a {
+    color: #268CCD;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.bot-message a:hover {
+    text-decoration: underline;
+}
+
+.bot-message ul,
+.bot-message ol {
+    margin: 10px 0;
+    padding-left: 25px;
+}
+
+.bot-message li {
+    margin: 5px 0;
+    line-height: 1.5;
+}
+
+.bot-message strong,
+.bot-message b {
+    font-weight: 600;
+    color: #333;
+}
+
+.bot-message em,
+.bot-message i {
+    font-style: italic;
+}
+
+.bot-message code {
+    background-color: #f5f5f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 13px;
+}
+
+.bot-message pre {
+    background-color: #f5f5f5;
+    padding: 10px;
+    border-radius: 5px;
+    overflow-x: auto;
+    margin: 10px 0;
+}
+
+.bot-message pre code {
+    background: none;
+    padding: 0;
+}
+
+.bot-message blockquote {
+    border-left: 3px solid #268CCD;
+    padding-left: 15px;
+    margin: 10px 0;
+    color: #666;
+    font-style: italic;
+}
