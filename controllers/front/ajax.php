@@ -592,14 +592,14 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 foreach ($products as $product) {
                     // Check if product title appears in text
                     $titleLower = mb_strtolower($product['title']);
-                    if (stripos($textLower, $titleLower) !== false) {
+                    if (strpos($textLower, $titleLower) !== false) {
                         $found[] = $product['title'];
                     }
                     
                     // Check if category appears in text
                     if (!empty($product['category'])) {
                         $categoryLower = mb_strtolower($product['category']);
-                        if (stripos($textLower, $categoryLower) !== false) {
+                        if (strpos($textLower, $categoryLower) !== false) {
                             $found[] = $product['category'];
                         }
                     }
@@ -619,7 +619,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                          'τσάντα', 'bag', 'φόρεμα', 'dress'];
             
             foreach ($keywords as $keyword) {
-                if (stripos($textLower, $keyword) !== false) {
+                if (strpos($textLower, $keyword) !== false) {
                     $found[] = $keyword;
                 }
             }

@@ -98,7 +98,7 @@ New table: `ps_optic_aichat_analytics`
 - `id_conversation` - Auto-increment primary key
 - `id_customer` - Customer ID (nullable)
 - `user_message` - User's question
-- `bot_response` - AI's response (truncated to 1000 chars)
+- `bot_response` - AI's response (MEDIUMTEXT, stores full response)
 - `products_mentioned` - Comma-separated keywords
 - `response_time` - Response time in seconds
 - `detected_language` - Auto-detected language (el/en)

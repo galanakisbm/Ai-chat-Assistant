@@ -1223,8 +1223,8 @@ class Optic_AiChat extends Module
                     </div>
                     <div class="col-md-3">
                         <div class="alert alert-danger">
-                            <h4><i class="icon-exchange"></i> ' . number_format($stats['avg_messages_per_conv'], 1) . '</h4>
-                            <p>' . $this->l('Avg Messages/Conv') . '</p>
+                            <h4><i class="icon-exchange"></i> ' . number_format($stats['avg_messages_per_day'], 1) . '</h4>
+                            <p>' . $this->l('Avg Messages/Day') . '</p>
                         </div>
                     </div>
                 </div>
@@ -1314,7 +1314,7 @@ class Optic_AiChat extends Module
                     COUNT(DISTINCT id_customer) as total_conversations,
                     COUNT(*) as total_messages,
                     AVG(response_time) as avg_response_time,
-                    COUNT(*) / GREATEST(COUNT(DISTINCT DATE(date_add)), 1) as avg_messages_per_conv
+                    COUNT(*) / GREATEST(COUNT(DISTINCT DATE(date_add)), 1) as avg_messages_per_day
                 FROM ' . _DB_PREFIX_ . 'optic_aichat_analytics
                 WHERE date_add >= DATE_SUB(NOW(), INTERVAL 30 DAY)';
         
@@ -1324,7 +1324,7 @@ class Optic_AiChat extends Module
             'total_conversations' => $result['total_conversations'] ?: 0,
             'total_messages' => $result['total_messages'] ?: 0,
             'avg_response_time' => $result['avg_response_time'] ?: 0,
-            'avg_messages_per_conv' => $result['avg_messages_per_conv'] ?: 0,
+            'avg_messages_per_day' => $result['avg_messages_per_day'] ?: 0,
         ];
     }
 
