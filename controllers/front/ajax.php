@@ -36,10 +36,70 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         // Log the conversation
         $this->logConversation($userMessage, $response, $pageContextJson, $responseTime);
 
+        // Parse AI response to structured format
+        $parsedResponse = $this->parseAIResponse($response);
+
         $this->returnJson([
             'status' => 'success',
-            'reply' => $response
+            'reply' => $parsedResponse
         ]);
+    }
+
+    private function parseAIResponse($response)
+    {
+        // Parse [PRODUCT:...] tags and convert to structured data
+        // Using pipe | as delimiter since it won't appear in URLs or product names
+        $pattern = '/\[PRODUCT:([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^\]]+)\]/';
+        
+        $result = [
+            'type' => 'mixed',
+            'content' => []
+        ];
+        
+        $lastPos = 0;
+        preg_match_all($pattern, $response, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        
+        foreach ($matches as $match) {
+            // Add text before product
+            $textBefore = substr($response, $lastPos, $match[0][1] - $lastPos);
+            if (trim($textBefore)) {
+                $result['content'][] = [
+                    'type' => 'text',
+                    'text' => trim($textBefore)
+                ];
+            }
+            
+            // Add product card
+            $result['content'][] = [
+                'type' => 'product',
+                'id' => $match[1][0],
+                'name' => $match[2][0],
+                'price' => $match[3][0],
+                'image' => $match[4][0],
+                'url' => $match[5][0]
+            ];
+            
+            $lastPos = $match[0][1] + strlen($match[0][0]);
+        }
+        
+        // Add remaining text
+        $textAfter = substr($response, $lastPos);
+        if (trim($textAfter)) {
+            $result['content'][] = [
+                'type' => 'text',
+                'text' => trim($textAfter)
+            ];
+        }
+        
+        // If no products found, return as simple text
+        if (empty($result['content'])) {
+            $result = [
+                'type' => 'text',
+                'content' => $response
+            ];
+        }
+        
+        return $result;
     }
 
     private function returnJson($data)
@@ -136,14 +196,16 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         $systemInstruction = $basePrompt . 
         " You MUST answer in Greek (Ελληνικά). " .
         " You are a professional e-commerce assistant. Be friendly, concise, and helpful. " .
-        " IMPORTANT RULES:\n" .
-        " - Always greet warmly\n" .
-        " - When showing products, present them in a structured HTML format with images\n" .
-        " - Suggest related products when appropriate\n" .
-        " - If asked about policies (shipping, returns), use get_cms_page_content\n" .
-        " - For product searches, use broad keywords and context\n" .
-        " - Keep responses under 200 words unless showing product lists\n" .
-        " - Use emojis sparingly for friendliness (✨, 🛍️, 📦, ✅)\n" .
+        " IMPORTANT RESPONSE FORMAT RULES:\n" .
+        " - When recommending products from search_products results, you MUST format them as:\n" .
+        "   [PRODUCT:id|name|price|image|url]\n" .
+        "   Use pipe | as separator (NOT colon). Use exact values from search results.\n" .
+        "   Example: [PRODUCT:19|Προσαρμόσιμη Κούπα|17.24|https://example.com/img.jpg|https://example.com/product]\n" .
+        " - You can include multiple products, one per line\n" .
+        " - Add friendly Greek text before/after products to provide context\n" .
+        " - For non-product responses, use simple, friendly Greek text\n" .
+        " - Available tools: search_products, get_cms_page_content, get_my_orders, get_active_offers\n" .
+        " - Keep responses concise and helpful\n" .
         " Available CMS pages:\n" . $cmsList .
         ($pageContext ? "\n\nCURRENT PAGE CONTEXT:\n" . $pageContext : "");
 
@@ -240,6 +302,8 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 $productObj = new Product($row['id_product'], false, $id_lang);
                 $cover = Product::getCover($row['id_product']);
                 $imagePath = $cover ? $link->getImageLink($row['link_rewrite'], $cover['id_image'], 'home_default') : '';
+                $productUrl = $link->getProductLink($row['id_product']);
+                $price = Product::getPriceStatic($row['id_product']);
                 
                 // Features & Variants
                 $features = $productObj->getFrontFeatures($id_lang);
@@ -250,10 +314,11 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 $varsText = ""; foreach ($vars as $g => $a) { $varsText .= $g . ": [" . implode(', ', array_unique($a)) . "] "; }
 
                 $products[] = [
+                    'id' => $row['id_product'],
                     'name' => $row['pname'],
-                    'price' => Product::getPriceStatic($row['id_product']),
-                    'link' => $link->getProductLink($row['id_product']),
+                    'price' => number_format($price, 2),
                     'image' => $imagePath,
+                    'url' => $productUrl,
                     'description' => strip_tags($productObj->description_short), 
                     'features' => implode(", ", $feats),
                     'variants' => $varsText,
