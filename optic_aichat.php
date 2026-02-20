@@ -113,6 +113,9 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_CUSTOM_ICON', '') &&
             Configuration::updateValue('OPTIC_AICHAT_CUSTOM_LOGO', '') &&
             Configuration::updateValue('OPTIC_AICHAT_QUICK_BUTTONS', json_encode([])) &&
+            Configuration::updateValue('OPTIC_AICHAT_POSITION', 'right') &&
+            Configuration::updateValue('OPTIC_AICHAT_OFFSET_BOTTOM', 24) &&
+            Configuration::updateValue('OPTIC_AICHAT_OFFSET_SIDE', 24) &&
             Configuration::updateValue('OPTIC_AICHAT_SYNONYMS_RAW', "τετραγωνικά, m², τμ, τ.μ., sqm, m2\nλίτρα, l, lt, liter\nκιλά, kg, κιλο, kilogram\nwatt, w, βατ\ndB, db, decibel, ντεσιμπελ\nαφυγραντήρας, dehumidifier, αφυγραντηρας") &&
             Configuration::updateValue('OPTIC_AICHAT_SYNONYMS', json_encode([
                 ['τετραγωνικά', 'm²', 'τμ', 'τ.μ.', 'sqm', 'm2'],
@@ -189,6 +192,9 @@ class Optic_AiChat extends Module
                 Configuration::updateValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR', Tools::getValue('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff');
                 Configuration::updateValue('OPTIC_AICHAT_AUTO_LANGUAGE', Tools::getValue('OPTIC_AICHAT_AUTO_LANGUAGE'));
                 Configuration::updateValue('OPTIC_AICHAT_FALLBACK_LANG', Tools::getValue('OPTIC_AICHAT_FALLBACK_LANG'));
+                Configuration::updateValue('OPTIC_AICHAT_POSITION', Tools::getValue('OPTIC_AICHAT_POSITION') === 'left' ? 'left' : 'right');
+                Configuration::updateValue('OPTIC_AICHAT_OFFSET_BOTTOM', max(0, (int) Tools::getValue('OPTIC_AICHAT_OFFSET_BOTTOM')));
+                Configuration::updateValue('OPTIC_AICHAT_OFFSET_SIDE', max(0, (int) Tools::getValue('OPTIC_AICHAT_OFFSET_SIDE')));
                 
                 $output .= $this->displayConfirmation($this->l('Basic settings saved successfully!'));
             }
@@ -499,7 +505,12 @@ class Optic_AiChat extends Module
         }
 
         $quickButtons = json_decode(Configuration::get('OPTIC_AICHAT_QUICK_BUTTONS'), true) ?: [];
-        
+
+        $chatPosition    = Configuration::get('OPTIC_AICHAT_POSITION') ?: 'right';
+        $offsetBottom    = max(0, (int)(Configuration::get('OPTIC_AICHAT_OFFSET_BOTTOM') ?: 24));
+        $offsetSide      = max(0, (int)(Configuration::get('OPTIC_AICHAT_OFFSET_SIDE') ?: 24));
+        $containerBottom = $offsetBottom + 80;
+
         $this->context->smarty->assign([
             'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE') ?: 'AI Assistant',
             'welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊',
@@ -507,6 +518,10 @@ class Optic_AiChat extends Module
             'chat_logo' => $chatLogo,
             'shop_name' => $shop->name,
             'quick_buttons' => $quickButtons,
+            'chat_position'    => $chatPosition,
+            'offset_bottom'    => $offsetBottom,
+            'offset_side'      => $offsetSide,
+            'container_bottom' => $containerBottom,
             'optic_custom_css' => isset($this->context->smarty->tpl_vars['optic_custom_css']) 
                 ? $this->context->smarty->tpl_vars['optic_custom_css']->value 
                 : '',
@@ -1425,6 +1440,34 @@ class Optic_AiChat extends Module
                         'size' => 20,
                     ],
                     [
+                        'type'    => 'select',
+                        'label'   => $this->l('Chat Position'),
+                        'name'    => 'OPTIC_AICHAT_POSITION',
+                        'desc'    => $this->l('Choose whether the chat appears on the right or left side of the screen'),
+                        'options' => [
+                            'query' => [
+                                ['id' => 'right', 'name' => $this->l('Right (Δεξιά)')],
+                                ['id' => 'left',  'name' => $this->l('Left (Αριστερά)')],
+                            ],
+                            'id'   => 'id',
+                            'name' => 'name',
+                        ],
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Bottom Offset (px)'),
+                        'name'  => 'OPTIC_AICHAT_OFFSET_BOTTOM',
+                        'desc'  => $this->l('Distance from the bottom of the screen in pixels (default: 24)'),
+                        'class' => 'fixed-width-sm',
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Side Offset (px)'),
+                        'name'  => 'OPTIC_AICHAT_OFFSET_SIDE',
+                        'desc'  => $this->l('Distance from the right or left edge in pixels (default: 24)'),
+                        'class' => 'fixed-width-sm',
+                    ],
+                    [
                         'type' => 'switch',
                         'label' => $this->l('Enable Auto Language Detection'),
                         'name' => 'OPTIC_AICHAT_AUTO_LANGUAGE',
@@ -1489,6 +1532,9 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_BUTTON_TEXT_COLOR'] = Configuration::get('OPTIC_AICHAT_BUTTON_TEXT_COLOR') ?: '#ffffff';
         $helper->fields_value['OPTIC_AICHAT_AUTO_LANGUAGE'] = Configuration::get('OPTIC_AICHAT_AUTO_LANGUAGE');
         $helper->fields_value['OPTIC_AICHAT_FALLBACK_LANG'] = Configuration::get('OPTIC_AICHAT_FALLBACK_LANG') ?: 'el';
+        $helper->fields_value['OPTIC_AICHAT_POSITION']      = Configuration::get('OPTIC_AICHAT_POSITION') ?: 'right';
+        $helper->fields_value['OPTIC_AICHAT_OFFSET_BOTTOM'] = Configuration::get('OPTIC_AICHAT_OFFSET_BOTTOM') ?: 24;
+        $helper->fields_value['OPTIC_AICHAT_OFFSET_SIDE']   = Configuration::get('OPTIC_AICHAT_OFFSET_SIDE') ?: 24;
 
         return $helper->generateForm([$fields_form]);
     }
