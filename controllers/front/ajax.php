@@ -515,6 +515,54 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
     /**
      * Search products from XML cache
      */
+    /**
+     * Parse a price constraint from a natural-language query.
+     * Supports Greek and English: "μέχρι 30 ευρώ", "έως 50€", "κάτω από 25€",
+     * "από 10 ευρώ", "πάνω από 20€", standalone "30€", etc.
+     *
+     * @param string $query
+     * @return array|null  Associative array with optional keys 'min' and/or 'max' (floats), or null if no price found.
+     */
+    private function parsePriceFilter($query)
+    {
+        $filter = [];
+
+        // Max price: "μέχρι/έως/κάτω από/under/up to X"
+        if (preg_match('/(?:μέχρι|μεχρι|έως|εως|κάτω\s*από|κατω\s*απο|under|max|up\s*to)\s*([\d,\.]+)\s*(?:ευρώ|ευρω|€|euro|eur)?/ui', $query, $m)) {
+            $filter['max'] = (float) str_replace(',', '.', $m[1]);
+        }
+
+        // Min price: "από/πάνω από/over/min/from X"
+        if (preg_match('/(?:από|απο|πάνω\s*από|πανω\s*απο|over|min|from)\s*([\d,\.]+)\s*(?:ευρώ|ευρω|€|euro|eur)?/ui', $query, $m)) {
+            $filter['min'] = (float) str_replace(',', '.', $m[1]);
+        }
+
+        // Standalone "X ευρώ" or "X€" with no direction keyword → treat as max
+        if (empty($filter) && preg_match('/([\d,\.]+)\s*(?:ευρώ|ευρω|€)/ui', $query, $m)) {
+            $filter['max'] = (float) str_replace(',', '.', $m[1]);
+        }
+
+        return empty($filter) ? null : $filter;
+    }
+
+    /**
+     * Remove price-related terms from a query string so the remaining text
+     * can be used for pure product-name / category text matching.
+     *
+     * @param string $query
+     * @return string  Cleaned query with price phrases removed and trimmed.
+     */
+    private function stripPriceFromQuery($query)
+    {
+        // Remove direction keywords + number + optional currency
+        $cleaned = preg_replace(
+            '/\s*(?:μέχρι|μεχρι|έως|εως|κάτω\s*από|κατω\s*απο|under|max|up\s*to|από|απο|πάνω\s*από|πανω\s*απο|over|min|from)?\s*[\d,\.]+\s*(?:ευρώ|ευρω|€|euro|eur)/ui',
+            ' ',
+            $query
+        );
+        return trim(preg_replace('/\s{2,}/', ' ', $cleaned));
+    }
+
     private function searchProductsFromXML($query)
     {
         $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
@@ -571,11 +619,15 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             return $results;
         }
 
+        // --- Price filter detection ---
+        $priceFilter = $this->parsePriceFilter($query);
+        $cleanQuery  = $priceFilter ? $this->stripPriceFromQuery($queryLower) : $queryLower;
+        $expandedQueries = $this->expandQueryWithSynonyms($cleanQuery);
+
         $results = [];
-        $expandedQueries = $this->expandQueryWithSynonyms($query);
 
         foreach ($products as $product) {
-            // Search in multiple fields
+            // --- Text matching (on clean query, without price phrases) ---
             $searchFields = array_filter([
                 $product['title'] ?? '',
                 $product['description'] ?? '',
@@ -586,37 +638,50 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 $product['dimensions'] ?? ''
             ]);
             $searchableText = mb_strtolower(implode(' ', $searchFields));
-            
-            // Fuzzy search with synonym expansion
+
             $matched = false;
             foreach ($expandedQueries as $q) {
-                if (strpos($searchableText, $q) !== false) {
+                if ($q === '' || strpos($searchableText, $q) !== false) {
                     $matched = true;
                     break;
                 }
             }
-            if ($matched) {
-                // Format for AI response with rich data
-                $results[] = [
-                    'id' => $product['product_id'],
-                    'name' => $product['title'],
-                    'description' => $product['short_description'] ?: ($product['description'] ?? ''),
-                    'price' => $product['price_sale'],
-                    'regular_price' => $product['price_regular'] ?? '',
-                    'image' => $product['image'],
-                    'url' => $product['url'],
-                    'category' => $product['category'] ?? '',
-                    'onsale' => $product['onsale'] ?? '',
-                    'sizes' => $product['sizes'] ?? '',
-                    'composition' => $product['composition'] ?? '',
-                    'dimensions' => $product['dimensions'] ?? '',
-                    'instock' => $product['instock'] ?? '',
-                ];
+            if (!$matched) {
+                continue;
             }
-            
-            if (count($results) >= 5) break;
+
+            // --- Price filter ---
+            if ($priceFilter !== null) {
+                $productPrice = (float) str_replace(',', '.', $product['price_sale'] ?? '0');
+                if (isset($priceFilter['max']) && $productPrice > $priceFilter['max']) {
+                    continue;
+                }
+                if (isset($priceFilter['min']) && $productPrice < $priceFilter['min']) {
+                    continue;
+                }
+            }
+
+            $results[] = [
+                'id'           => $product['product_id'],
+                'name'         => $product['title'],
+                'description'  => $product['short_description'] ?: ($product['description'] ?? ''),
+                'price'        => $product['price_sale'],
+                'regular_price'=> $product['price_regular'] ?? '',
+                'image'        => $product['image'],
+                'url'          => $product['url'],
+                'category'     => $product['category'] ?? '',
+                'onsale'       => $product['onsale'] ?? '',
+                'sizes'        => $product['sizes'] ?? '',
+                'composition'  => $product['composition'] ?? '',
+                'dimensions'   => $product['dimensions'] ?? '',
+                'instock'      => $product['instock'] ?? '',
+            ];
+
+            if (count($results) >= 5) {
+                break;
+            }
         }
-        
+
         return $results;
     }
 
