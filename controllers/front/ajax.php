@@ -518,17 +518,27 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
     private function searchProducts($query, $isComparison = false)
     {
         $id_lang = Context::getContext()->language->id;
+
+        // Extract price filter before any search so both XML and DB paths use a clean query
+        $priceExtracted = $this->extractPriceFilter($query);
+        $searchQuery = $priceExtracted['query'];
+        $priceMin    = $priceExtracted['min'];
+        $priceMax    = $priceExtracted['max'];
         
-        // Try XML first (faster)
+        // Try XML first (faster) — XML path handles price extraction internally
         $xmlProducts = $this->searchProductsFromXML($query, $isComparison);
         
         if (!empty($xmlProducts)) {
             return $xmlProducts;
         }
         
-        // Fallback to database — try expanded queries via synonyms
-        $expandedQueries = $this->expandQueryWithSynonyms($query);
-        $searchResults = Search::find($id_lang, $query, 1, 8, 'position', 'desc');
+        // Fallback to database — use cleaned query (without price text) for text search
+        // If the entire query was a price expression, skip DB search (XML handles all-price queries)
+        if ($searchQuery === '') {
+            return "Δεν βρέθηκαν προϊόντα.";
+        }
+        $expandedQueries = $this->expandQueryWithSynonyms($searchQuery);
+        $searchResults = Search::find($id_lang, $searchQuery, 1, 8, 'position', 'desc');
         if (empty($searchResults['result']) && count($expandedQueries) > 1) {
             foreach (array_slice($expandedQueries, 1) as $expandedQuery) {
                 $searchResults = Search::find($id_lang, $expandedQuery, 1, 8, 'position', 'desc');
@@ -569,6 +579,24 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 ];
             }
         }
+
+        // Apply price filter to DB results
+        if (!empty($products) && ($priceMin !== null || $priceMax !== null)) {
+            $products = array_values(array_filter($products, function ($product) use ($priceMin, $priceMax) {
+                $price = null;
+                foreach (['price_sale', 'price', 'price_regular'] as $field) {
+                    if (isset($product[$field]) && $product[$field] !== '' && $product[$field] !== null) {
+                        $price = (float) str_replace([',', '€', ' '], ['.', '', ''], (string)$product[$field]);
+                        if ($price > 0) break;
+                    }
+                }
+                if ($price === null || $price <= 0) return true;
+                if ($priceMin !== null && $price < $priceMin) return false;
+                if ($priceMax !== null && $price > $priceMax) return false;
+                return true;
+            }));
+        }
+
         return empty($products) ? "Δεν βρέθηκαν προϊόντα." : $products;
     }
 
@@ -621,6 +649,47 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             $query
         );
         return trim(preg_replace('/\s{2,}/', ' ', $cleaned));
+    }
+
+    /**
+     * Extract price range from a natural-language query string.
+     * Combines price detection and query cleaning in a single call.
+     *
+     * @param string $query
+     * @return array  ['min' => float|null, 'max' => float|null, 'query' => string_without_price_expression]
+     */
+    private function extractPriceFilter(string $query): array
+    {
+        $min = null;
+        $max = null;
+
+        // Ceiling: "μέχρι/έως/ως/κάτω από/under/below/up to/max" + number + optional currency
+        $ceilingPattern = '/\b(μέχρι|μεχρι|έως|εως|ως|κάτω\s+από|κατω\s+απο|up\s+to|max(?:imum)?|under|below)\s*[€]?\s*(\d+(?:[.,]\d{1,2})?)\s*(?:ευρώ?|ευρω|euro?s?|eur|€)?(?=\s|$)/iu';
+        if (preg_match($ceilingPattern, $query, $m)) {
+            $max   = (float) str_replace(',', '.', $m[2]);
+            $query = trim(preg_replace($ceilingPattern, '', $query));
+        }
+
+        // Floor: "από/πάνω από/τουλάχιστον/over/above/from/min" + number + optional currency
+        $floorPattern = '/\b(από|απο|πάνω\s+από|πανω\s+απο|τουλάχιστον|from|over|above|min(?:imum)?)\s*[€]?\s*(\d+(?:[.,]\d{1,2})?)\s*(?:ευρώ?|ευρω|euro?s?|eur|€)?(?=\s|$)/iu';
+        if (preg_match($floorPattern, $query, $m)) {
+            $min   = (float) str_replace(',', '.', $m[2]);
+            $query = trim(preg_replace($floorPattern, '', $query));
+        }
+
+        // Standalone "30€" / "€30" / "30 ευρω" with no direction keyword → treat as ceiling
+        if ($min === null && $max === null) {
+            $standalonePattern = '/(?:€\s*(\d+(?:[.,]\d{1,2})?)(?=\s|$))|(?:(\d+(?:[.,]\d{1,2})?)\s*(?:ευρώ?|ευρω|euro?s?|eur|€)(?=\s|$))/iu';
+            if (preg_match($standalonePattern, $query, $m)) {
+                $val   = $m[1] !== '' ? $m[1] : ($m[2] ?? '');
+                $max   = (float) str_replace(',', '.', $val);
+                $query = trim(preg_replace($standalonePattern, '', $query, 1));
+            }
+        }
+
+        $query = trim(preg_replace('/\s{2,}/', ' ', $query));
+
+        return ['min' => $min, 'max' => $max, 'query' => $query];
     }
 
     private function searchProductsFromXML($query, $isComparison = false)
@@ -680,8 +749,11 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         }
 
         // --- Price filter detection ---
-        $priceFilter = $this->parsePriceFilter($query);
-        $cleanQuery  = $priceFilter ? $this->stripPriceFromQuery($queryLower) : $queryLower;
+        $priceExtracted = $this->extractPriceFilter($queryLower);
+        $priceMin    = $priceExtracted['min'];
+        $priceMax    = $priceExtracted['max'];
+        $cleanQuery  = $priceExtracted['query'];
+        $priceFilter = ($priceMin !== null || $priceMax !== null) ? ['min' => $priceMin, 'max' => $priceMax] : null;
         $expandedQueries = $this->expandQueryWithSynonyms($cleanQuery);
 
         // Feature 2: Color filter detection
