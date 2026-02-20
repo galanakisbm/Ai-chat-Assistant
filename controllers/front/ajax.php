@@ -156,6 +156,15 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         }
         
         // No products found, return as simple text
+        // Detect [CONTACT_CARD] marker
+        if (strpos($response, '[CONTACT_CARD]') !== false) {
+            $textContent = trim(str_replace('[CONTACT_CARD]', '', $response));
+            return [
+                'type' => 'contact_card',
+                'text' => $textContent ?: 'Μπορείτε να επικοινωνήσετε μαζί μας μέσω:'
+            ];
+        }
+
         return [
             'type' => 'text',
             'content' => $response
@@ -209,6 +218,20 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         // Build dynamic context from Knowledge Base
         $dynamicContext = $this->module->buildDynamicContext();
         
+        // Build contact context for AI
+        $contactParts = [];
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_PHONE'))     $contactParts[] = 'Phone: '     . Configuration::get('OPTIC_AICHAT_CONTACT_PHONE');
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_EMAIL'))     $contactParts[] = 'Email: '     . Configuration::get('OPTIC_AICHAT_CONTACT_EMAIL');
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_VIBER'))     $contactParts[] = 'Viber: '     . Configuration::get('OPTIC_AICHAT_CONTACT_VIBER');
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_WHATSAPP'))  $contactParts[] = 'WhatsApp: '  . Configuration::get('OPTIC_AICHAT_CONTACT_WHATSAPP');
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_MESSENGER')) $contactParts[] = 'Messenger: ' . Configuration::get('OPTIC_AICHAT_CONTACT_MESSENGER');
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_TELEGRAM'))  $contactParts[] = 'Telegram: '  . Configuration::get('OPTIC_AICHAT_CONTACT_TELEGRAM');
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_INSTAGRAM')) $contactParts[] = 'Instagram: ' . Configuration::get('OPTIC_AICHAT_CONTACT_INSTAGRAM');
+        if (Configuration::get('OPTIC_AICHAT_CONTACT_FACEBOOK'))  $contactParts[] = 'Facebook: '  . Configuration::get('OPTIC_AICHAT_CONTACT_FACEBOOK');
+        $contactContext = !empty($contactParts)
+            ? "\n\nCONTACT INFO:\n" . implode("\n", $contactParts) . "\n- When user asks how to contact the store, respond with a friendly message followed by exactly [CONTACT_CARD] on its own line.\n"
+            : '';
+
         // Get language instruction
         $languageInstruction = $this->getLanguageInstruction($detectedLang);
 
@@ -295,9 +318,18 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         " - Include product details (sizes, stock, etc.) in your text if available\n" .
         " - Available tools: search_products, get_cms_page_content, get_my_orders, get_active_offers\n" .
         " - Keep responses concise and helpful\n" .
+        " OFFERS/DISCOUNTS RULES:\n" .
+        " - When get_active_offers returns sale_products array, display EACH sale product as [PRODUCT:id|name|price|image|url]\n" .
+        " - When get_active_offers returns coupons, show the coupon code AND the product cards together\n" .
+        " - NEVER show sale products as a plain bullet list - always use [PRODUCT:...] format\n" .
+        " - Example offer response:\n" .
+        " 'Ενεργές προσφορές:\n" .
+        " [PRODUCT:1|T-shirt|23.71|https://example.com/img.jpg|https://example.com/product]\n" .
+        " Κωδικός έκπτωσης: SUMMER10 (-10%)'.\n\n" .
         " Available CMS pages:\n" . $cmsList .
         ($pageContext ? "\n\nCURRENT PAGE CONTEXT:\n" . $pageContext : "") .
         ($dynamicContext ? "\n\nKNOWLEDGE BASE:\n" . $dynamicContext : "") .
+        $contactContext .
         $languageInstruction;
 
         // Build History Context
@@ -532,9 +564,51 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
     private function getActiveOffers()
     {
         $rules = CartRule::getCustomerCartRules(Context::getContext()->language->id, Context::getContext()->customer->id, true, true, true);
-        $data = [];
-        foreach ($rules as $r) { $data[] = ['name' => $r['name'], 'code' => $r['code'], 'reduction' => $r['reduction_percent'] > 0 ? $r['reduction_percent'].'%' : $r['reduction_amount'].'€']; }
-        return $data;
+        $coupons = [];
+        foreach ($rules as $r) {
+            $coupons[] = [
+                'name'      => $r['name'],
+                'code'      => $r['code'],
+                'reduction' => $r['reduction_percent'] > 0 ? $r['reduction_percent'].'%' : $r['reduction_amount'].'€'
+            ];
+        }
+
+        $saleProducts = $this->getSaleProductsFromXML();
+
+        return [
+            'coupons'       => $coupons,
+            'sale_products' => $saleProducts
+        ];
+    }
+
+    private function getSaleProductsFromXML()
+    {
+        $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
+        if (!file_exists($cacheFile)) return [];
+
+        $products = json_decode(file_get_contents($cacheFile), true);
+        if (!$products || !is_array($products)) return [];
+
+        $results = [];
+        foreach ($products as $product) {
+            $isOnSale = !empty($product['onsale']) && $product['onsale'] !== 'false' && $product['onsale'] !== '0';
+            $hasPriceReduction = !empty($product['price_regular']) && !empty($product['price_sale'])
+                && (float)$product['price_sale'] < (float)$product['price_regular'];
+
+            if ($isOnSale || $hasPriceReduction) {
+                $results[] = [
+                    'id'            => $product['product_id'] ?? '',
+                    'name'          => $product['title'] ?? '',
+                    'price'         => $product['price_sale'] ?? '',
+                    'regular_price' => $product['price_regular'] ?? '',
+                    'image'         => $product['image'] ?? '',
+                    'url'           => $product['url'] ?? '',
+                    'category'      => $product['category'] ?? '',
+                ];
+            }
+            if (count($results) >= 6) break;
+        }
+        return $results;
     }
 
     /**

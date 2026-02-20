@@ -199,6 +199,17 @@ document.addEventListener('DOMContentLoaded', function() {
                     productsWrapper.appendChild(productCard);
                 }
             });
+        } else if (data.type === 'contact_card') {
+            if (data.text) {
+                const textDiv = document.createElement('div');
+                textDiv.className = 'bot-text';
+                textDiv.innerHTML = escapeHtml(data.text).replace(/\n/g, '<br>');
+                container.appendChild(textDiv);
+            }
+            const contactCard = createContactCard();
+            if (contactCard) {
+                container.appendChild(contactCard);
+            }
         }
         
         messagesArea.appendChild(container);
@@ -226,6 +237,27 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
         `;
         
+        return card;
+    }
+
+    function createContactCard() {
+        if (typeof optic_chat_contact_links === 'undefined' || !optic_chat_contact_links || !optic_chat_contact_links.length) {
+            return null;
+        }
+        const card = document.createElement('div');
+        card.className = 'contact-card';
+
+        optic_chat_contact_links.forEach(function(link) {
+            const btn = document.createElement('a');
+            btn.href = link.url;
+            btn.target = '_blank';
+            btn.rel = 'noopener noreferrer';
+            btn.className = 'contact-btn contact-btn--' + escapeHtml(link.type);
+            btn.innerHTML = '<span class="contact-btn-icon">' + link.icon + '</span>'
+                          + '<span class="contact-btn-label">' + escapeHtml(link.label) + '</span>';
+            card.appendChild(btn);
+        });
+
         return card;
     }
 

@@ -333,6 +333,19 @@ class Optic_AiChat extends Module
             $output .= $this->displayConfirmation($this->l('Old analytics data cleared successfully!'));
         }
 
+        // Handle Contact Settings Save
+        if (Tools::isSubmit('submitContactSettings')) {
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_PHONE',     Tools::getValue('OPTIC_AICHAT_CONTACT_PHONE'));
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_EMAIL',     Tools::getValue('OPTIC_AICHAT_CONTACT_EMAIL'));
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_VIBER',     Tools::getValue('OPTIC_AICHAT_CONTACT_VIBER'));
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_WHATSAPP',  Tools::getValue('OPTIC_AICHAT_CONTACT_WHATSAPP'));
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_MESSENGER', Tools::getValue('OPTIC_AICHAT_CONTACT_MESSENGER'));
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_TELEGRAM',  Tools::getValue('OPTIC_AICHAT_CONTACT_TELEGRAM'));
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_INSTAGRAM', Tools::getValue('OPTIC_AICHAT_CONTACT_INSTAGRAM'));
+            Configuration::updateValue('OPTIC_AICHAT_CONTACT_FACEBOOK',  Tools::getValue('OPTIC_AICHAT_CONTACT_FACEBOOK'));
+            $output .= $this->displayConfirmation($this->l('Contact settings saved successfully.'));
+        }
+
         return $output . $this->renderTabbedForm();
     }
 
@@ -377,10 +390,36 @@ class Optic_AiChat extends Module
         
         $this->context->smarty->assign('optic_custom_css', $customCSS);
 
+        // Build contact links for JS (only non-empty)
+        $contactLinksJs = [];
+        $contactMappings = [
+            'phone'     => ['label' => 'Τηλέφωνο', 'icon' => '📞', 'prefix' => 'tel:',                    'clean' => true],
+            'email'     => ['label' => 'Email',     'icon' => '✉️', 'prefix' => 'mailto:',                  'clean' => false],
+            'viber'     => ['label' => 'Viber',     'icon' => '💬', 'prefix' => 'viber://chat?number=',     'clean' => true],
+            'whatsapp'  => ['label' => 'WhatsApp',  'icon' => '💬', 'prefix' => 'https://wa.me/',           'clean' => true],
+            'messenger' => ['label' => 'Messenger', 'icon' => '💬', 'prefix' => 'https://m.me/',            'clean' => false],
+            'telegram'  => ['label' => 'Telegram',  'icon' => '✈️', 'prefix' => 'https://t.me/',            'clean' => false],
+            'instagram' => ['label' => 'Instagram', 'icon' => '📸', 'prefix' => 'https://instagram.com/',   'clean' => false],
+            'facebook'  => ['label' => 'Facebook',  'icon' => '👍', 'prefix' => 'https://facebook.com/',    'clean' => false],
+        ];
+        foreach ($contactMappings as $type => $cfg) {
+            $val = Configuration::get('OPTIC_AICHAT_CONTACT_' . strtoupper($type));
+            if (!empty($val)) {
+                if (strpos($val, 'http') === 0) {
+                    $url = $val;
+                } else {
+                    $clean = $cfg['clean'] ? preg_replace('/[^0-9+]/', '', $val) : $val;
+                    $url = $cfg['prefix'] . $clean;
+                }
+                $contactLinksJs[] = ['type' => $type, 'label' => $cfg['label'], 'icon' => $cfg['icon'], 'url' => $url];
+            }
+        }
+
         Media::addJsDef([
-            'optic_chat_ajax_url' => $this->context->link->getModuleLink('optic_aichat', 'ajax'),
+            'optic_chat_ajax_url'        => $this->context->link->getModuleLink('optic_aichat', 'ajax'),
             'optic_chat_welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊',
-            'optic_chat_shop_domain' => preg_replace('/[^a-z0-9]/i', '_', Tools::getShopDomainSsl())
+            'optic_chat_shop_domain'     => preg_replace('/[^a-z0-9]/i', '_', Tools::getShopDomainSsl()),
+            'optic_chat_contact_links'   => $contactLinksJs,
         ]);
     }
 
@@ -1148,15 +1187,16 @@ class Optic_AiChat extends Module
         $currentTab = Tools::getValue('section', 'basic');
 
         // Validate section value
-        $validTabs = ['basic', 'xml', 'knowledge', 'analytics'];
+        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'analytics'];
         if (!in_array($currentTab, $validTabs)) {
             $currentTab = 'basic';
         }
 
         $tabs = [
-            'basic' => $this->l('Basic Settings'),
-            'xml' => $this->l('XML Product Feed'),
+            'basic'     => $this->l('Basic Settings'),
+            'xml'       => $this->l('XML Product Feed'),
             'knowledge' => $this->l('Knowledge Base'),
+            'contact'   => $this->l('Contact Links'),
             'analytics' => $this->l('Analytics'),
         ];
 
@@ -1189,6 +1229,9 @@ class Optic_AiChat extends Module
                 break;
             case 'knowledge':
                 $html .= $this->renderKnowledgeBaseForm();
+                break;
+            case 'contact':
+                $html .= $this->renderContactSettingsForm();
                 break;
             case 'analytics':
                 $html .= $this->renderAnalyticsDashboard();
@@ -1626,6 +1669,48 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_INCLUDE_CMS'] = Configuration::get('OPTIC_AICHAT_INCLUDE_CMS');
         $helper->fields_value['OPTIC_AICHAT_STORE_POLICIES'] = Configuration::get('OPTIC_AICHAT_STORE_POLICIES');
         $helper->fields_value['OPTIC_AICHAT_FAQ'] = Configuration::get('OPTIC_AICHAT_FAQ');
+
+        return $helper->generateForm([$fields_form]);
+    }
+
+    private function renderContactSettingsForm()
+    {
+        $fields_form = [
+            'form' => [
+                'legend'      => ['title' => $this->l('Contact Links'), 'icon' => 'icon-phone'],
+                'description' => $this->l('Configure contact links that appear as clickable buttons in the chat when users ask how to contact you. Leave empty to hide.'),
+                'input'       => [
+                    ['type' => 'text', 'label' => $this->l('Phone Number'),       'name' => 'OPTIC_AICHAT_CONTACT_PHONE',     'desc' => $this->l('e.g. +306981234567'),                              'placeholder' => '+306981234567'],
+                    ['type' => 'text', 'label' => $this->l('Email Address'),      'name' => 'OPTIC_AICHAT_CONTACT_EMAIL',     'desc' => $this->l('e.g. info@myshop.gr')],
+                    ['type' => 'text', 'label' => $this->l('Viber'),              'name' => 'OPTIC_AICHAT_CONTACT_VIBER',     'desc' => $this->l('Phone number for Viber (e.g. +306981234567)'),    'placeholder' => '+306981234567'],
+                    ['type' => 'text', 'label' => $this->l('WhatsApp'),           'name' => 'OPTIC_AICHAT_CONTACT_WHATSAPP',  'desc' => $this->l('Phone number for WhatsApp (e.g. +306981234567)'), 'placeholder' => '+306981234567'],
+                    ['type' => 'text', 'label' => $this->l('Facebook Messenger'), 'name' => 'OPTIC_AICHAT_CONTACT_MESSENGER', 'desc' => $this->l('Facebook page username or full Messenger URL'),   'placeholder' => 'myfacebookpage'],
+                    ['type' => 'text', 'label' => $this->l('Telegram'),           'name' => 'OPTIC_AICHAT_CONTACT_TELEGRAM',  'desc' => $this->l('Telegram username (e.g. myshop)'),                'placeholder' => 'myshop'],
+                    ['type' => 'text', 'label' => $this->l('Instagram'),          'name' => 'OPTIC_AICHAT_CONTACT_INSTAGRAM', 'desc' => $this->l('Instagram username or full URL'),                  'placeholder' => 'myshop'],
+                    ['type' => 'text', 'label' => $this->l('Facebook Page'),      'name' => 'OPTIC_AICHAT_CONTACT_FACEBOOK',  'desc' => $this->l('Facebook page username or full URL'),              'placeholder' => 'myshoppage'],
+                ],
+                'submit'      => ['title' => $this->l('Save Contact Settings'), 'name' => 'submitContactSettings'],
+            ],
+        ];
+
+        $helper = new HelperForm();
+        $helper->show_toolbar = false;
+        $helper->table = $this->table;
+        $helper->module = $this;
+        $helper->default_form_language = $this->context->language->id;
+        $helper->identifier = $this->identifier;
+        $helper->submit_action = 'submitContactSettings';
+        $helper->currentIndex = AdminController::$currentIndex . '&configure=' . $this->name . '&section=contact';
+        $helper->token = Tools::getAdminTokenLite('AdminModules');
+
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_PHONE']     = Configuration::get('OPTIC_AICHAT_CONTACT_PHONE');
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_EMAIL']     = Configuration::get('OPTIC_AICHAT_CONTACT_EMAIL');
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_VIBER']     = Configuration::get('OPTIC_AICHAT_CONTACT_VIBER');
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_WHATSAPP']  = Configuration::get('OPTIC_AICHAT_CONTACT_WHATSAPP');
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_MESSENGER'] = Configuration::get('OPTIC_AICHAT_CONTACT_MESSENGER');
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_TELEGRAM']  = Configuration::get('OPTIC_AICHAT_CONTACT_TELEGRAM');
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_INSTAGRAM'] = Configuration::get('OPTIC_AICHAT_CONTACT_INSTAGRAM');
+        $helper->fields_value['OPTIC_AICHAT_CONTACT_FACEBOOK']  = Configuration::get('OPTIC_AICHAT_CONTACT_FACEBOOK');
 
         return $helper->generateForm([$fields_form]);
     }
