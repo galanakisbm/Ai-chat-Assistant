@@ -507,3 +507,45 @@
     max-width: 100%;
     width: 100%;
 }
+
+/* ===== Contact Card ===== */
+.contact-card {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+    width: 100%;
+}
+
+.contact-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 9px 14px;
+    border-radius: 10px;
+    text-decoration: none !important;
+    font-size: 13px;
+    font-weight: 500;
+    background: #f0f4f8;
+    color: #2d3748 !important;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.contact-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.contact-btn--phone     { background: #e8f5e9; border-color: #a5d6a7; }
+.contact-btn--email     { background: #e3f2fd; border-color: #90caf9; }
+.contact-btn--viber     { background: #ede7f6; border-color: #ce93d8; }
+.contact-btn--whatsapp  { background: #e8f5e9; border-color: #81c784; }
+.contact-btn--messenger { background: #e3f2fd; border-color: #64b5f6; }
+.contact-btn--telegram  { background: #e1f5fe; border-color: #4fc3f7; }
+.contact-btn--instagram { background: #fce4ec; border-color: #f48fb1; }
+.contact-btn--facebook  { background: #e8eaf6; border-color: #9fa8da; }
+
+.contact-btn-icon  { font-size: 16px; line-height: 1; }
+.contact-btn-label { font-size: 13px; }
