@@ -176,16 +176,27 @@ document.addEventListener('DOMContentLoaded', function() {
             textDiv.innerHTML = escapeHtml(data.content).replace(/\n/g, '<br>');
             container.appendChild(textDiv);
         } else if (data.type === 'mixed') {
-            // Mixed content (text + products)
+            // Mixed content (text + products) - group products into grid wrapper
+            let productsWrapper = null;
+
             data.content.forEach(item => {
                 if (item.type === 'text') {
+                    // Reset products grid wrapper for next product group
+                    productsWrapper = null;
+
                     const textDiv = document.createElement('div');
                     textDiv.className = 'bot-text';
                     textDiv.innerHTML = escapeHtml(item.text).replace(/\n/g, '<br>');
                     container.appendChild(textDiv);
                 } else if (item.type === 'product') {
+                    // Create a products-grid wrapper only once per consecutive product group
+                    if (!productsWrapper) {
+                        productsWrapper = document.createElement('div');
+                        productsWrapper.className = 'products-grid';
+                        container.appendChild(productsWrapper);
+                    }
                     const productCard = createProductCard(item);
-                    container.appendChild(productCard);
+                    productsWrapper.appendChild(productCard);
                 }
             });
         }

@@ -460,3 +460,50 @@
     object-fit: contain;
     margin-right: 10px;
 }
+
+/* Products Grid - for multiple products in a list */
+.products-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    width: 100%;
+    margin: 6px 0;
+}
+
+/* When only one product is in the grid, show it full-width */
+.products-grid .product-card:only-child {
+    grid-column: 1 / -1;
+}
+
+/* In grid mode, reduce image height to fit better */
+.products-grid .product-image {
+    height: 140px;
+}
+
+/* In grid mode, adjust font sizes for compact layout */
+.products-grid .product-name {
+    font-size: 13px;
+}
+
+.products-grid .product-price {
+    font-size: 15px;
+    margin-bottom: 8px;
+}
+
+.products-grid .product-link {
+    padding: 7px 12px;
+    font-size: 12px;
+}
+
+/* Mobile: single column grid */
+@media (max-width: 480px) {
+    .products-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Bot messages containing a product grid should use full width */
+.bot-message:has(.products-grid) {
+    max-width: 100%;
+    width: 100%;
+}
