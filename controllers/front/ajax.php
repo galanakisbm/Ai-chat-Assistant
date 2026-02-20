@@ -413,9 +413,27 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'Authorization: Bearer ' . $apiKey]);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+
         $response = curl_exec($ch);
+        $curlError = curl_error($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        return json_decode($response, true);
+
+        if ($response === false) {
+            error_log('OpticAiChat cURL Error: ' . $curlError);
+            return ['error' => ['message' => 'Connection to OpenAI failed. Please try again later.']];
+        }
+
+        $decoded = json_decode($response, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            error_log('OpticAiChat JSON Error: ' . $response);
+            return ['error' => ['message' => 'Invalid JSON response from OpenAI (HTTP ' . $httpCode . ')']];
+        }
+
+        return $decoded;
     }
 
     // --- DATA FUNCTIONS ---
