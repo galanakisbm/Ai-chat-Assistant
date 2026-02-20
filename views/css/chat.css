@@ -327,6 +327,17 @@
     transform: translateY(-1px);
 }
 
+.quick-reply-link {
+    display: inline-block;
+    text-decoration: none;
+    color: #4a5568;
+}
+
+.quick-reply-link:hover {
+    color: var(--optic-chat-button-text);
+    text-decoration: none;
+}
+
 /* Input Area - Clean Design */
 .optic-chat-input-area {
     padding: 16px 20px;

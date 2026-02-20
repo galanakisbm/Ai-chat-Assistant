@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Quick Replies Click Event
-    document.querySelectorAll('.quick-reply-btn').forEach(btn => {
+    document.querySelectorAll('.quick-reply-chat').forEach(btn => {
         btn.addEventListener('click', function() {
             inputField.value = this.getAttribute('data-msg');
             sendMessage();
@@ -146,11 +146,19 @@ document.addEventListener('DOMContentLoaded', function() {
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message user-message';
         
-        // Handle different input types
         if (typeof text === 'string') {
             msgDiv.textContent = text;
         } else if (text && typeof text === 'object') {
-            msgDiv.textContent = text.content || JSON.stringify(text);
+            // Extract actual text content - never show raw JSON
+            if (typeof text.content === 'string') {
+                msgDiv.textContent = text.content;
+            } else if (typeof text.text === 'string') {
+                msgDiv.textContent = text.text;
+            } else {
+                // Last resort: try to find any string value
+                const firstString = Object.values(text).find(v => typeof v === 'string');
+                msgDiv.textContent = firstString || '';
+            }
         } else {
             msgDiv.textContent = String(text);
         }
@@ -284,8 +292,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function saveMessageToStorage(data, className) {
         let history = JSON.parse(localStorage.getItem(STORAGE_HISTORY)) || [];
-        // Store the actual data structure for proper restoration
-        history.push({ text: JSON.stringify(data), class: className });
+        history.push({ text: data, class: className }); // store as object directly
         if (history.length > 50) history = history.slice(-50);
         localStorage.setItem(STORAGE_HISTORY, JSON.stringify(history));
     }

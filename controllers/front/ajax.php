@@ -508,9 +508,44 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             return [];
         }
         
+        // Detect "new arrivals" type queries — return first products from feed (newest first)
+        $newArrivalsKeywords = ['νέα', 'νέο', 'νέος', 'νέες', 'new', 'arrivals', 'arrival', 'νεα', 'νεο',
+                                'τελευταία', 'τελευταιες', 'τελευταίες', 'καινούρια', 'καινουρια',
+                                'latest', 'recent', 'αφίξεις', 'αφιξεις'];
+        $queryLower = mb_strtolower(trim($query));
+        $isNewArrivalsQuery = false;
+        foreach ($newArrivalsKeywords as $kw) {
+            if (strpos($queryLower, $kw) !== false) {
+                $isNewArrivalsQuery = true;
+                break;
+            }
+        }
+
+        if ($isNewArrivalsQuery) {
+            // Return first 6 products (XML feed is typically newest-first)
+            $results = [];
+            foreach (array_slice($products, 0, 6) as $product) {
+                $results[] = [
+                    'id' => $product['product_id'],
+                    'name' => $product['title'],
+                    'description' => $product['short_description'] ?: ($product['description'] ?? ''),
+                    'price' => $product['price_sale'],
+                    'regular_price' => $product['price_regular'] ?? '',
+                    'image' => $product['image'],
+                    'url' => $product['url'],
+                    'category' => $product['category'] ?? '',
+                    'onsale' => $product['onsale'] ?? '',
+                    'sizes' => $product['sizes'] ?? '',
+                    'composition' => $product['composition'] ?? '',
+                    'dimensions' => $product['dimensions'] ?? '',
+                    'instock' => $product['instock'] ?? '',
+                ];
+            }
+            return $results;
+        }
+
         $results = [];
-        $queryLower = mb_strtolower($query);
-        
+
         foreach ($products as $product) {
             // Search in multiple fields
             $searchFields = array_filter([
@@ -530,12 +565,12 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 $results[] = [
                     'id' => $product['product_id'],
                     'name' => $product['title'],
-                    'description' => $product['short_description'] ?: $product['description'],
+                    'description' => $product['short_description'] ?: ($product['description'] ?? ''),
                     'price' => $product['price_sale'],
-                    'regular_price' => $product['price_regular'],
+                    'regular_price' => $product['price_regular'] ?? '',
                     'image' => $product['image'],
                     'url' => $product['url'],
-                    'category' => $product['category'],
+                    'category' => $product['category'] ?? '',
                     'onsale' => $product['onsale'] ?? '',
                     'sizes' => $product['sizes'] ?? '',
                     'composition' => $product['composition'] ?? '',

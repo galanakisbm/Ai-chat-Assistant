@@ -111,7 +111,8 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_AUTO_LANGUAGE', 1) &&
             Configuration::updateValue('OPTIC_AICHAT_FALLBACK_LANG', 'el') &&
             Configuration::updateValue('OPTIC_AICHAT_CUSTOM_ICON', '') &&
-            Configuration::updateValue('OPTIC_AICHAT_CUSTOM_LOGO', '');
+            Configuration::updateValue('OPTIC_AICHAT_CUSTOM_LOGO', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_QUICK_BUTTONS', json_encode([]));
     }
 
     public function uninstall()
@@ -143,6 +144,7 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_FAQ');
         Configuration::deleteByName('OPTIC_AICHAT_CUSTOM_ICON');
         Configuration::deleteByName('OPTIC_AICHAT_CUSTOM_LOGO');
+        Configuration::deleteByName('OPTIC_AICHAT_QUICK_BUTTONS');
         
         // Διαγραφή πίνακα chat logs
         Db::getInstance()->execute("DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`");
@@ -346,6 +348,29 @@ class Optic_AiChat extends Module
             $output .= $this->displayConfirmation($this->l('Contact settings saved successfully.'));
         }
 
+        // Handle Quick Buttons Save
+        if (Tools::isSubmit('submitQuickButtons')) {
+            $quickButtons = [];
+            for ($i = 1; $i <= 5; $i++) {
+                $label = Tools::getValue('quick_btn_label_' . $i);
+                $type  = Tools::getValue('quick_btn_type_' . $i);
+                $url   = Tools::getValue('quick_btn_url_' . $i);
+                $msg   = Tools::getValue('quick_btn_msg_' . $i);
+
+                if (!empty($label)) {
+                    $btn = ['label' => $label, 'type' => $type];
+                    if ($type === 'link') {
+                        $btn['url'] = $url;
+                    } else {
+                        $btn['message'] = $msg;
+                    }
+                    $quickButtons[] = $btn;
+                }
+            }
+            Configuration::updateValue('OPTIC_AICHAT_QUICK_BUTTONS', json_encode($quickButtons));
+            $output .= $this->displayConfirmation($this->l('Quick buttons saved successfully!'));
+        }
+
         return $output . $this->renderTabbedForm();
     }
 
@@ -416,10 +441,11 @@ class Optic_AiChat extends Module
         }
 
         Media::addJsDef([
-            'optic_chat_ajax_url'        => $this->context->link->getModuleLink('optic_aichat', 'ajax'),
-            'optic_chat_welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊',
-            'optic_chat_shop_domain'     => preg_replace('/[^a-z0-9]/i', '_', Tools::getShopDomainSsl()),
-            'optic_chat_contact_links'   => $contactLinksJs,
+            'optic_chat_ajax_url'          => $this->context->link->getModuleLink('optic_aichat', 'ajax'),
+            'optic_chat_welcome_message'   => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊',
+            'optic_chat_shop_domain'       => preg_replace('/[^a-z0-9]/i', '_', Tools::getShopDomainSsl()),
+            'optic_chat_contact_links'     => $contactLinksJs,
+            'optic_chat_quick_buttons'     => json_decode(Configuration::get('OPTIC_AICHAT_QUICK_BUTTONS'), true) ?: [],
         ]);
     }
 
@@ -439,6 +465,8 @@ class Optic_AiChat extends Module
             $logoPath = Configuration::get('PS_LOGO');
             $chatLogo = $this->context->link->getMediaLink(_PS_IMG_DIR_ . $logoPath);
         }
+
+        $quickButtons = json_decode(Configuration::get('OPTIC_AICHAT_QUICK_BUTTONS'), true) ?: [];
         
         $this->context->smarty->assign([
             'chat_title' => Configuration::get('OPTIC_AICHAT_WIDGET_TITLE') ?: 'AI Assistant',
@@ -446,6 +474,7 @@ class Optic_AiChat extends Module
             'chat_icon' => $chatIcon,
             'chat_logo' => $chatLogo,
             'shop_name' => $shop->name,
+            'quick_buttons' => $quickButtons,
             'optic_custom_css' => isset($this->context->smarty->tpl_vars['optic_custom_css']) 
                 ? $this->context->smarty->tpl_vars['optic_custom_css']->value 
                 : '',
@@ -1187,17 +1216,18 @@ class Optic_AiChat extends Module
         $currentTab = Tools::getValue('section', 'basic');
 
         // Validate section value
-        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'analytics'];
+        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'quickbuttons', 'analytics'];
         if (!in_array($currentTab, $validTabs)) {
             $currentTab = 'basic';
         }
 
         $tabs = [
-            'basic'     => $this->l('Basic Settings'),
-            'xml'       => $this->l('XML Product Feed'),
-            'knowledge' => $this->l('Knowledge Base'),
-            'contact'   => $this->l('Contact Links'),
-            'analytics' => $this->l('Analytics'),
+            'basic'        => $this->l('Basic Settings'),
+            'xml'          => $this->l('XML Product Feed'),
+            'knowledge'    => $this->l('Knowledge Base'),
+            'contact'      => $this->l('Contact Links'),
+            'quickbuttons' => $this->l('Quick Buttons'),
+            'analytics'    => $this->l('Analytics'),
         ];
 
         $html = '<div class="panel">';
@@ -1232,6 +1262,9 @@ class Optic_AiChat extends Module
                 break;
             case 'contact':
                 $html .= $this->renderContactSettingsForm();
+                break;
+            case 'quickbuttons':
+                $html .= $this->renderQuickButtonsForm();
                 break;
             case 'analytics':
                 $html .= $this->renderAnalyticsDashboard();
@@ -1713,6 +1746,112 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_CONTACT_FACEBOOK']  = Configuration::get('OPTIC_AICHAT_CONTACT_FACEBOOK');
 
         return $helper->generateForm([$fields_form]);
+    }
+
+    private function renderQuickButtonsForm()
+    {
+        $savedButtons = json_decode(Configuration::get('OPTIC_AICHAT_QUICK_BUTTONS'), true) ?: [];
+
+        // Fetch CMS pages for dropdown
+        $idLang = (int)$this->context->language->id;
+        $cmsPages = CMS::listCms($idLang);
+        $cmsOptions = '';
+        foreach ($cmsPages as $cms) {
+            $cmsUrl = htmlspecialchars(
+                $this->context->link->getCMSLink((int)$cms['id_cms'], null, null, $idLang),
+                ENT_QUOTES,
+                'UTF-8'
+            );
+            $cmsOptions .= '<option value="' . $cmsUrl . '">' . htmlspecialchars($cms['meta_title'], ENT_QUOTES, 'UTF-8') . '</option>';
+        }
+
+        $actionUrl = htmlspecialchars(
+            AdminController::$currentIndex . '&configure=' . $this->name .
+            '&token=' . Tools::getAdminTokenLite('AdminModules') . '&section=quickbuttons',
+            ENT_QUOTES,
+            'UTF-8'
+        );
+
+        $html = '<form action="' . $actionUrl . '" method="post">';
+        $html .= '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-list"></i> ' . $this->l('Quick Buttons (έως 5)') . '</div>';
+        $html .= '<div class="panel-body">';
+        $html .= '<p class="help-block">' . $this->l('Αυτά τα κουμπιά εμφανίζονται στο chat. Τύπος "Σύνδεσμος" = ανοίγει URL χωρίς AI request. Τύπος "Chat" = στέλνει μήνυμα στο AI.') . '</p>';
+
+        for ($i = 1; $i <= 5; $i++) {
+            $btn = isset($savedButtons[$i - 1]) ? $savedButtons[$i - 1] : [];
+            $savedLabel = htmlspecialchars($btn['label'] ?? '', ENT_QUOTES, 'UTF-8');
+            $savedType  = $btn['type'] ?? 'link';
+            $savedUrl   = htmlspecialchars($btn['url'] ?? '', ENT_QUOTES, 'UTF-8');
+            $savedMsg   = htmlspecialchars($btn['message'] ?? '', ENT_QUOTES, 'UTF-8');
+            $selLink    = ($savedType === 'link') ? 'selected' : '';
+            $selChat    = ($savedType === 'chat') ? 'selected' : '';
+            $displayUrl = ($savedType !== 'chat') ? '' : 'display:none;';
+            $displayMsg = ($savedType === 'chat') ? '' : 'display:none;';
+
+            $html .= '<div class="row quick-btn-row" style="border-bottom:1px solid #eee;padding:10px 0;">';
+            $html .= '<div class="col-md-3">';
+            $html .= '<label>' . $this->l('Κουμπί') . ' ' . (int)$i . ' - ' . $this->l('Κείμενο') . '</label>';
+            $html .= '<input type="text" name="quick_btn_label_' . (int)$i . '" class="form-control" value="' . $savedLabel . '" placeholder="π.χ. 📞 Τηλέφωνο">';
+            $html .= '</div>';
+            $html .= '<div class="col-md-2">';
+            $html .= '<label>' . $this->l('Τύπος') . '</label>';
+            $html .= '<select name="quick_btn_type_' . (int)$i . '" class="form-control quick-btn-type" data-idx="' . (int)$i . '">';
+            $html .= '<option value="link" ' . $selLink . '>' . $this->l('Σύνδεσμος') . '</option>';
+            $html .= '<option value="chat" ' . $selChat . '>' . $this->l('Chat μήνυμα') . '</option>';
+            $html .= '</select>';
+            $html .= '</div>';
+            $html .= '<div class="col-md-3 quick-btn-url-wrap" id="url_wrap_' . (int)$i . '" style="' . $displayUrl . '">';
+            $html .= '<label>' . $this->l('URL ή CMS σελίδα') . '</label>';
+            $html .= '<input type="text" name="quick_btn_url_' . (int)$i . '" class="form-control" value="' . $savedUrl . '" placeholder="https://...">';
+            $html .= '<select class="form-control mt-1 quick-btn-cms-select" data-target="quick_btn_url_' . (int)$i . '">';
+            $html .= '<option value="">-- ' . $this->l('Επιλογή CMS σελίδας') . ' --</option>';
+            $html .= $cmsOptions;
+            $html .= '</select>';
+            $html .= '</div>';
+            $html .= '<div class="col-md-3 quick-btn-msg-wrap" id="msg_wrap_' . (int)$i . '" style="' . $displayMsg . '">';
+            $html .= '<label>' . $this->l('Μήνυμα για AI') . '</label>';
+            $html .= '<input type="text" name="quick_btn_msg_' . (int)$i . '" class="form-control" value="' . $savedMsg . '" placeholder="π.χ. Πού στέλνετε;">';
+            $html .= '</div>';
+            $html .= '</div>';
+        }
+
+        $html .= '</div>'; // panel-body
+        $html .= '<div class="panel-footer">';
+        $html .= '<button type="submit" name="submitQuickButtons" class="btn btn-default pull-right">';
+        $html .= '<i class="process-icon-save"></i> ' . $this->l('Save Quick Buttons');
+        $html .= '</button></div>';
+        $html .= '</div>'; // panel
+        $html .= '<script>
+document.querySelectorAll(".quick-btn-type").forEach(function(sel) {
+    function toggle(sel) {
+        var idx = sel.getAttribute("data-idx");
+        var urlWrap = document.getElementById("url_wrap_" + idx);
+        var msgWrap = document.getElementById("msg_wrap_" + idx);
+        if (sel.value === "link") {
+            urlWrap.style.display = "";
+            msgWrap.style.display = "none";
+        } else {
+            urlWrap.style.display = "none";
+            msgWrap.style.display = "";
+        }
+    }
+    toggle(sel);
+    sel.addEventListener("change", function() { toggle(this); });
+});
+document.querySelectorAll(".quick-btn-cms-select").forEach(function(sel) {
+    sel.addEventListener("change", function() {
+        if (this.value) {
+            var targetName = this.getAttribute("data-target");
+            var input = document.querySelector("[name=\"" + targetName + "\"]");
+            if (input) input.value = this.value;
+        }
+    });
+});
+</script>';
+        $html .= '</form>';
+
+        return $html;
     }
 
     private function renderIconUploadField()
