@@ -2,6 +2,29 @@
     {$optic_custom_css nofilter}
 {/if}
 
+<style>
+#optic-chat-toggle {
+    bottom: {$offset_bottom|intval}px !important;
+    {if $chat_position == 'left'}
+    left: {$offset_side|intval}px !important;
+    right: auto !important;
+    {else}
+    right: {$offset_side|intval}px !important;
+    left: auto !important;
+    {/if}
+}
+#optic-chat-container {
+    bottom: {$container_bottom|intval}px !important;
+    {if $chat_position == 'left'}
+    left: {$offset_side|intval}px !important;
+    right: auto !important;
+    {else}
+    right: {$offset_side|intval}px !important;
+    left: auto !important;
+    {/if}
+}
+</style>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">

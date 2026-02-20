@@ -17,10 +17,11 @@
 }
 
 /* Floating Button - Modernized */
+/* position overridden by backoffice settings via inline style in chat_widget.tpl */
 #optic-chat-toggle {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    bottom: 24px; /* fallback default */
+    right: 24px;  /* fallback default */
     background: linear-gradient(135deg, var(--optic-chat-primary) 0%, var(--optic-chat-secondary) 100%);
     color: var(--optic-chat-button-text);
     border: none;
@@ -40,10 +41,11 @@
 }
 
 /* Chat Container - Modern Card Design */
+/* position overridden by backoffice settings via inline style in chat_widget.tpl */
 #optic-chat-container {
     position: fixed;
-    bottom: 100px;
-    right: 24px;
+    bottom: 100px; /* fallback default */
+    right: 24px;   /* fallback default */
     width: 400px;
     max-width: calc(100vw - 48px);
     height: 600px;
