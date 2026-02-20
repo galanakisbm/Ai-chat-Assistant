@@ -124,7 +124,22 @@ class Optic_AiChat extends Module
                 ['watt', 'w', 'βατ'],
                 ['dB', 'db', 'decibel', 'ντεσιμπελ'],
                 ['αφυγραντήρας', 'dehumidifier', 'αφυγραντηρας'],
-            ]));
+            ])) &&
+            Configuration::updateValue('OPTIC_AICHAT_FBT_RULES', '{}') &&
+            Configuration::updateValue('OPTIC_AICHAT_FBT_AUTO', 1) &&
+            Configuration::updateValue('OPTIC_AICHAT_PHONE', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_WHATSAPP', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_VIBER', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_EMAIL', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_MON_FRI', '09:00-17:00') &&
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_SAT', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_SUN', '') &&
+            Configuration::updateValue('OPTIC_AICHAT_TIMEZONE', 'Europe/Athens') &&
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_ENABLED', 1) &&
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_DELAY', 10) &&
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_TIMES', '1') &&
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_MESSAGE', 'Γεια σας! Μπορώ να σας βοηθήσω να βρείτε κάτι; 😊') &&
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_PAGES', 'all');
     }
 
     public function uninstall()
@@ -159,6 +174,21 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_QUICK_BUTTONS');
         Configuration::deleteByName('OPTIC_AICHAT_SYNONYMS');
         Configuration::deleteByName('OPTIC_AICHAT_SYNONYMS_RAW');
+        Configuration::deleteByName('OPTIC_AICHAT_FBT_RULES');
+        Configuration::deleteByName('OPTIC_AICHAT_FBT_AUTO');
+        Configuration::deleteByName('OPTIC_AICHAT_PHONE');
+        Configuration::deleteByName('OPTIC_AICHAT_WHATSAPP');
+        Configuration::deleteByName('OPTIC_AICHAT_VIBER');
+        Configuration::deleteByName('OPTIC_AICHAT_EMAIL');
+        Configuration::deleteByName('OPTIC_AICHAT_HOURS_MON_FRI');
+        Configuration::deleteByName('OPTIC_AICHAT_HOURS_SAT');
+        Configuration::deleteByName('OPTIC_AICHAT_HOURS_SUN');
+        Configuration::deleteByName('OPTIC_AICHAT_TIMEZONE');
+        Configuration::deleteByName('OPTIC_AICHAT_PROACTIVE_ENABLED');
+        Configuration::deleteByName('OPTIC_AICHAT_PROACTIVE_DELAY');
+        Configuration::deleteByName('OPTIC_AICHAT_PROACTIVE_TIMES');
+        Configuration::deleteByName('OPTIC_AICHAT_PROACTIVE_MESSAGE');
+        Configuration::deleteByName('OPTIC_AICHAT_PROACTIVE_PAGES');
         
         // Διαγραφή πίνακα chat logs
         Db::getInstance()->execute("DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`");
@@ -195,6 +225,11 @@ class Optic_AiChat extends Module
                 Configuration::updateValue('OPTIC_AICHAT_POSITION', Tools::getValue('OPTIC_AICHAT_POSITION') === 'left' ? 'left' : 'right');
                 Configuration::updateValue('OPTIC_AICHAT_OFFSET_BOTTOM', max(0, (int) Tools::getValue('OPTIC_AICHAT_OFFSET_BOTTOM')));
                 Configuration::updateValue('OPTIC_AICHAT_OFFSET_SIDE', max(0, (int) Tools::getValue('OPTIC_AICHAT_OFFSET_SIDE')));
+                Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_ENABLED', Tools::getValue('OPTIC_AICHAT_PROACTIVE_ENABLED'));
+                Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_DELAY',   max(0, (int)Tools::getValue('OPTIC_AICHAT_PROACTIVE_DELAY')));
+                Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_TIMES',   Tools::getValue('OPTIC_AICHAT_PROACTIVE_TIMES'));
+                Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_MESSAGE', Tools::getValue('OPTIC_AICHAT_PROACTIVE_MESSAGE'));
+                Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_PAGES',   Tools::getValue('OPTIC_AICHAT_PROACTIVE_PAGES'));
                 
                 $output .= $this->displayConfirmation($this->l('Basic settings saved successfully!'));
             }
@@ -409,6 +444,51 @@ class Optic_AiChat extends Module
             $output .= $this->displayConfirmation($this->l('Synonyms & Units saved successfully!'));
         }
 
+        // Handle FBT Save (Feature 4)
+        if (Tools::isSubmit('submitFBT')) {
+            $rawRules = Tools::getValue('OPTIC_AICHAT_FBT_RULES_RAW');
+            $parsed = [];
+            foreach (explode("\n", $rawRules) as $line) {
+                $line = trim($line);
+                if (empty($line)) continue;
+                $parts = explode('=', $line, 2);
+                if (count($parts) !== 2) continue;
+                $productId = trim($parts[0]);
+                $related = array_map('trim', explode(',', $parts[1]));
+                $related = array_values(array_filter($related, fn($v) => !empty($v)));
+                if (!empty($productId) && !empty($related)) {
+                    $parsed[$productId] = $related;
+                }
+            }
+            Configuration::updateValue('OPTIC_AICHAT_FBT_RULES', json_encode($parsed));
+            Configuration::updateValue('OPTIC_AICHAT_FBT_AUTO', Tools::getValue('OPTIC_AICHAT_FBT_AUTO'));
+            $output .= $this->displayConfirmation($this->l('Frequently Bought Together settings saved!'));
+        }
+
+        // Handle Handoff Save (Feature 7)
+        if (Tools::isSubmit('submitHandoff')) {
+            Configuration::updateValue('OPTIC_AICHAT_PHONE',         Tools::getValue('OPTIC_AICHAT_PHONE'));
+            Configuration::updateValue('OPTIC_AICHAT_WHATSAPP',      Tools::getValue('OPTIC_AICHAT_WHATSAPP'));
+            Configuration::updateValue('OPTIC_AICHAT_VIBER',         Tools::getValue('OPTIC_AICHAT_VIBER'));
+            Configuration::updateValue('OPTIC_AICHAT_EMAIL',         Tools::getValue('OPTIC_AICHAT_EMAIL'));
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_MON_FRI', Tools::getValue('OPTIC_AICHAT_HOURS_MON_FRI'));
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_SAT',     Tools::getValue('OPTIC_AICHAT_HOURS_SAT'));
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_SUN',     Tools::getValue('OPTIC_AICHAT_HOURS_SUN'));
+            $tz = Tools::getValue('OPTIC_AICHAT_TIMEZONE') ?: 'Europe/Athens';
+            Configuration::updateValue('OPTIC_AICHAT_TIMEZONE', $tz);
+            $output .= $this->displayConfirmation($this->l('Handoff & Contact settings saved!'));
+        }
+
+        // Handle Proactive Settings Save (Feature 8)
+        if (Tools::isSubmit('submitProactive')) {
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_ENABLED', Tools::getValue('OPTIC_AICHAT_PROACTIVE_ENABLED'));
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_DELAY',   max(0, (int)Tools::getValue('OPTIC_AICHAT_PROACTIVE_DELAY')));
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_TIMES',   Tools::getValue('OPTIC_AICHAT_PROACTIVE_TIMES'));
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_MESSAGE', Tools::getValue('OPTIC_AICHAT_PROACTIVE_MESSAGE'));
+            Configuration::updateValue('OPTIC_AICHAT_PROACTIVE_PAGES',   Tools::getValue('OPTIC_AICHAT_PROACTIVE_PAGES'));
+            $output .= $this->displayConfirmation($this->l('Proactive Chat settings saved!'));
+        }
+
         return $output . $this->renderTabbedForm();
     }
 
@@ -484,6 +564,24 @@ class Optic_AiChat extends Module
             'optic_chat_shop_domain'       => preg_replace('/[^a-z0-9]/i', '_', Tools::getShopDomainSsl()),
             'optic_chat_contact_links'     => $contactLinksJs,
             'optic_chat_quick_buttons'     => json_decode(Configuration::get('OPTIC_AICHAT_QUICK_BUTTONS'), true) ?: [],
+            'optic_chat_handoff'           => [
+                'phone'         => Configuration::get('OPTIC_AICHAT_PHONE'),
+                'whatsapp'      => Configuration::get('OPTIC_AICHAT_WHATSAPP'),
+                'viber'         => Configuration::get('OPTIC_AICHAT_VIBER'),
+                'email'         => Configuration::get('OPTIC_AICHAT_EMAIL'),
+                'hours_mon_fri' => Configuration::get('OPTIC_AICHAT_HOURS_MON_FRI'),
+                'hours_sat'     => Configuration::get('OPTIC_AICHAT_HOURS_SAT'),
+                'hours_sun'     => Configuration::get('OPTIC_AICHAT_HOURS_SUN'),
+                'timezone'      => Configuration::get('OPTIC_AICHAT_TIMEZONE') ?: 'Europe/Athens',
+            ],
+            'optic_chat_proactive'         => [
+                'enabled'         => (bool) Configuration::get('OPTIC_AICHAT_PROACTIVE_ENABLED'),
+                'delay'           => (int)(Configuration::get('OPTIC_AICHAT_PROACTIVE_DELAY') ?: 10),
+                'times'           => Configuration::get('OPTIC_AICHAT_PROACTIVE_TIMES') ?: '1',
+                'message'         => Configuration::get('OPTIC_AICHAT_PROACTIVE_MESSAGE') ?: 'Γεια σας! Μπορώ να σας βοηθήσω; 😊',
+                'pages'           => Configuration::get('OPTIC_AICHAT_PROACTIVE_PAGES') ?: 'all',
+                'is_product_page' => (bool)(isset($this->context->controller->php_self) && $this->context->controller->php_self === 'product'),
+            ],
         ]);
     }
 
@@ -1263,7 +1361,7 @@ class Optic_AiChat extends Module
         $currentTab = Tools::getValue('section', 'basic');
 
         // Validate section value
-        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'quickbuttons', 'analytics', 'synonyms'];
+        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'quickbuttons', 'analytics', 'synonyms', 'fbt', 'handoff'];
         if (!in_array($currentTab, $validTabs)) {
             $currentTab = 'basic';
         }
@@ -1276,6 +1374,8 @@ class Optic_AiChat extends Module
             'quickbuttons' => $this->l('Quick Buttons'),
             'analytics'    => $this->l('Analytics'),
             'synonyms'     => $this->l('Synonyms & Units'),
+            'fbt'          => $this->l('Frequently Bought Together'),
+            'handoff'      => $this->l('Handoff & Contact'),
         ];
 
         $html = '<div class="panel">';
@@ -1319,6 +1419,12 @@ class Optic_AiChat extends Module
                 break;
             case 'synonyms':
                 $html .= $this->renderSynonymsTab();
+                break;
+            case 'fbt':
+                $html .= $this->renderFBTForm();
+                break;
+            case 'handoff':
+                $html .= $this->renderHandoffForm();
                 break;
             default:
                 $html .= $this->renderBasicSettingsForm();
@@ -1504,6 +1610,60 @@ class Optic_AiChat extends Module
                         'name' => 'OPTIC_AICHAT_CUSTOM_LOGO_HTML',
                         'html_content' => $this->renderLogoUploadField(),
                     ],
+                    [
+                        'type' => 'switch',
+                        'label' => $this->l('Enable Proactive Chat'),
+                        'name' => 'OPTIC_AICHAT_PROACTIVE_ENABLED',
+                        'is_bool' => true,
+                        'desc' => $this->l('Automatically open chat and show a welcome message after a delay'),
+                        'values' => [
+                            ['id' => 'active_on', 'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')]
+                        ],
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Proactive Delay (seconds)'),
+                        'name' => 'OPTIC_AICHAT_PROACTIVE_DELAY',
+                        'desc' => $this->l('Seconds before the proactive message appears (default: 10)'),
+                        'class' => 'fixed-width-sm',
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Show Proactive Message'),
+                        'name' => 'OPTIC_AICHAT_PROACTIVE_TIMES',
+                        'desc' => $this->l('How many times per session to show the proactive message'),
+                        'options' => [
+                            'query' => [
+                                ['id' => '1',      'name' => $this->l('Once')],
+                                ['id' => '2',      'name' => $this->l('Twice')],
+                                ['id' => '3',      'name' => $this->l('3 Times')],
+                                ['id' => 'always', 'name' => $this->l('Always')],
+                            ],
+                            'id' => 'id',
+                            'name' => 'name',
+                        ],
+                    ],
+                    [
+                        'type' => 'text',
+                        'label' => $this->l('Proactive Message'),
+                        'name' => 'OPTIC_AICHAT_PROACTIVE_MESSAGE',
+                        'desc' => $this->l('The message shown when the chat auto-opens'),
+                    ],
+                    [
+                        'type' => 'select',
+                        'label' => $this->l('Show Proactive On'),
+                        'name' => 'OPTIC_AICHAT_PROACTIVE_PAGES',
+                        'desc' => $this->l('Which pages should trigger the proactive message'),
+                        'options' => [
+                            'query' => [
+                                ['id' => 'all',          'name' => $this->l('All Pages')],
+                                ['id' => 'product_only', 'name' => $this->l('Product Pages Only')],
+                            ],
+                            'id' => 'id',
+                            'name' => 'name',
+                        ],
+                    ],
                 ],
                 'submit' => [
                     'title' => $this->l('Save Basic Settings'),
@@ -1535,6 +1695,12 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_POSITION']      = Configuration::get('OPTIC_AICHAT_POSITION') ?: 'right';
         $helper->fields_value['OPTIC_AICHAT_OFFSET_BOTTOM'] = Configuration::get('OPTIC_AICHAT_OFFSET_BOTTOM') ?: 24;
         $helper->fields_value['OPTIC_AICHAT_OFFSET_SIDE']   = Configuration::get('OPTIC_AICHAT_OFFSET_SIDE') ?: 24;
+        $proactiveEnabled = Configuration::get('OPTIC_AICHAT_PROACTIVE_ENABLED');
+        $helper->fields_value['OPTIC_AICHAT_PROACTIVE_ENABLED'] = $proactiveEnabled !== false ? $proactiveEnabled : 1;
+        $helper->fields_value['OPTIC_AICHAT_PROACTIVE_DELAY']   = Configuration::get('OPTIC_AICHAT_PROACTIVE_DELAY') ?: 10;
+        $helper->fields_value['OPTIC_AICHAT_PROACTIVE_TIMES']   = Configuration::get('OPTIC_AICHAT_PROACTIVE_TIMES') ?: '1';
+        $helper->fields_value['OPTIC_AICHAT_PROACTIVE_MESSAGE'] = Configuration::get('OPTIC_AICHAT_PROACTIVE_MESSAGE') ?: 'Γεια σας! Μπορώ να σας βοηθήσω να βρείτε κάτι; 😊';
+        $helper->fields_value['OPTIC_AICHAT_PROACTIVE_PAGES']   = Configuration::get('OPTIC_AICHAT_PROACTIVE_PAGES') ?: 'all';
 
         return $helper->generateForm([$fields_form]);
     }
@@ -1980,6 +2146,170 @@ document.querySelectorAll(".quick-btn-cms-select").forEach(function(sel) {
         $html .= '</form>';
 
         return $html;
+    }
+
+    private function renderFBTForm()
+    {
+        $rulesJson = Configuration::get('OPTIC_AICHAT_FBT_RULES') ?: '{}';
+        $rulesArray = json_decode($rulesJson, true) ?: [];
+        $rawRules = '';
+        foreach ($rulesArray as $productId => $related) {
+            $rawRules .= $productId . ' = ' . implode(', ', $related) . "\n";
+        }
+
+        $fields_form = [
+            'form' => [
+                'legend' => [
+                    'title' => $this->l('Frequently Bought Together'),
+                    'icon'  => 'icon-shopping-cart',
+                ],
+                'description' => $this->l('Define manual product pairings. Format: product_id = related_id1, related_id2 (one per line). When no manual rule matches, auto-suggestions from same category will be used if enabled.'),
+                'input' => [
+                    [
+                        'type'  => 'switch',
+                        'label' => $this->l('Auto Suggestions (same category)'),
+                        'name'  => 'OPTIC_AICHAT_FBT_AUTO',
+                        'is_bool' => true,
+                        'desc'  => $this->l('When no manual rule matches, suggest products from the same category'),
+                        'values' => [
+                            ['id' => 'active_on',  'value' => 1, 'label' => $this->l('Yes')],
+                            ['id' => 'active_off', 'value' => 0, 'label' => $this->l('No')],
+                        ],
+                    ],
+                    [
+                        'type'  => 'textarea',
+                        'label' => $this->l('Manual Pairing Rules'),
+                        'name'  => 'OPTIC_AICHAT_FBT_RULES_RAW',
+                        'rows'  => 10,
+                        'desc'  => $this->l('One rule per line. Example: 123 = 456, 789'),
+                    ],
+                ],
+                'submit' => [
+                    'title' => $this->l('Save FBT Settings'),
+                    'name'  => 'submitFBT',
+                ],
+            ],
+        ];
+
+        $helper = new HelperForm();
+        $helper->show_toolbar = false;
+        $helper->table        = $this->table;
+        $helper->module       = $this;
+        $helper->default_form_language = $this->context->language->id;
+        $helper->identifier   = $this->identifier;
+        $helper->submit_action = 'submitFBT';
+        $helper->currentIndex  = AdminController::$currentIndex . '&configure=' . $this->name . '&section=fbt';
+        $helper->token         = Tools::getAdminTokenLite('AdminModules');
+
+        $fbtAuto = Configuration::get('OPTIC_AICHAT_FBT_AUTO');
+        $helper->fields_value['OPTIC_AICHAT_FBT_AUTO']      = $fbtAuto !== false ? $fbtAuto : 1;
+        $helper->fields_value['OPTIC_AICHAT_FBT_RULES_RAW'] = $rawRules;
+
+        return $helper->generateForm([$fields_form]);
+    }
+
+    private function renderHandoffForm()
+    {
+        $fields_form = [
+            'form' => [
+                'legend' => [
+                    'title' => $this->l('Handoff & Contact'),
+                    'icon'  => 'icon-phone',
+                ],
+                'description' => $this->l('Configure contact details and business hours for the agent handoff feature. These are used when AI cannot resolve a query and should escalate to a human.'),
+                'input' => [
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Phone Number'),
+                        'name'  => 'OPTIC_AICHAT_PHONE',
+                        'desc'  => $this->l('e.g. +30 210 1234567'),
+                        'placeholder' => '+30 210 1234567',
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('WhatsApp Number'),
+                        'name'  => 'OPTIC_AICHAT_WHATSAPP',
+                        'desc'  => $this->l('e.g. +30 6901234567'),
+                        'placeholder' => '+306901234567',
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Viber Number'),
+                        'name'  => 'OPTIC_AICHAT_VIBER',
+                        'desc'  => $this->l('e.g. +30 6901234567'),
+                        'placeholder' => '+306901234567',
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Support Email'),
+                        'name'  => 'OPTIC_AICHAT_EMAIL',
+                        'desc'  => $this->l('e.g. support@myshop.gr'),
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Hours Mon–Fri'),
+                        'name'  => 'OPTIC_AICHAT_HOURS_MON_FRI',
+                        'desc'  => $this->l('e.g. 09:00-17:00'),
+                        'placeholder' => '09:00-17:00',
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Hours Saturday'),
+                        'name'  => 'OPTIC_AICHAT_HOURS_SAT',
+                        'desc'  => $this->l('e.g. 10:00-14:00, or leave empty if closed'),
+                        'placeholder' => '10:00-14:00',
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Hours Sunday'),
+                        'name'  => 'OPTIC_AICHAT_HOURS_SUN',
+                        'desc'  => $this->l('Leave empty if closed on Sundays'),
+                    ],
+                    [
+                        'type'  => 'select',
+                        'label' => $this->l('Timezone'),
+                        'name'  => 'OPTIC_AICHAT_TIMEZONE',
+                        'desc'  => $this->l('Select the timezone for business hours comparison'),
+                        'options' => [
+                            'query' => [
+                                ['id' => 'Europe/Athens',  'name' => 'Europe/Athens (EET/EEST)'],
+                                ['id' => 'Europe/London',  'name' => 'Europe/London (GMT/BST)'],
+                                ['id' => 'Europe/Berlin',  'name' => 'Europe/Berlin (CET/CEST)'],
+                                ['id' => 'Europe/Paris',   'name' => 'Europe/Paris (CET/CEST)'],
+                                ['id' => 'UTC',            'name' => 'UTC'],
+                            ],
+                            'id'   => 'id',
+                            'name' => 'name',
+                        ],
+                    ],
+                ],
+                'submit' => [
+                    'title' => $this->l('Save Handoff Settings'),
+                    'name'  => 'submitHandoff',
+                ],
+            ],
+        ];
+
+        $helper = new HelperForm();
+        $helper->show_toolbar = false;
+        $helper->table        = $this->table;
+        $helper->module       = $this;
+        $helper->default_form_language = $this->context->language->id;
+        $helper->identifier   = $this->identifier;
+        $helper->submit_action = 'submitHandoff';
+        $helper->currentIndex  = AdminController::$currentIndex . '&configure=' . $this->name . '&section=handoff';
+        $helper->token         = Tools::getAdminTokenLite('AdminModules');
+
+        $helper->fields_value['OPTIC_AICHAT_PHONE']         = Configuration::get('OPTIC_AICHAT_PHONE');
+        $helper->fields_value['OPTIC_AICHAT_WHATSAPP']      = Configuration::get('OPTIC_AICHAT_WHATSAPP');
+        $helper->fields_value['OPTIC_AICHAT_VIBER']         = Configuration::get('OPTIC_AICHAT_VIBER');
+        $helper->fields_value['OPTIC_AICHAT_EMAIL']         = Configuration::get('OPTIC_AICHAT_EMAIL');
+        $helper->fields_value['OPTIC_AICHAT_HOURS_MON_FRI'] = Configuration::get('OPTIC_AICHAT_HOURS_MON_FRI') ?: '09:00-17:00';
+        $helper->fields_value['OPTIC_AICHAT_HOURS_SAT']     = Configuration::get('OPTIC_AICHAT_HOURS_SAT');
+        $helper->fields_value['OPTIC_AICHAT_HOURS_SUN']     = Configuration::get('OPTIC_AICHAT_HOURS_SUN');
+        $helper->fields_value['OPTIC_AICHAT_TIMEZONE']      = Configuration::get('OPTIC_AICHAT_TIMEZONE') ?: 'Europe/Athens';
+
+        return $helper->generateForm([$fields_form]);
     }
 
     private function renderIconUploadField()
