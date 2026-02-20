@@ -397,6 +397,16 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_CONTACT_TELEGRAM',  Tools::getValue('OPTIC_AICHAT_CONTACT_TELEGRAM'));
             Configuration::updateValue('OPTIC_AICHAT_CONTACT_INSTAGRAM', Tools::getValue('OPTIC_AICHAT_CONTACT_INSTAGRAM'));
             Configuration::updateValue('OPTIC_AICHAT_CONTACT_FACEBOOK',  Tools::getValue('OPTIC_AICHAT_CONTACT_FACEBOOK'));
+            // Handoff fields
+            Configuration::updateValue('OPTIC_AICHAT_PHONE',         Tools::getValue('OPTIC_AICHAT_PHONE'));
+            Configuration::updateValue('OPTIC_AICHAT_WHATSAPP',      Tools::getValue('OPTIC_AICHAT_WHATSAPP'));
+            Configuration::updateValue('OPTIC_AICHAT_VIBER',         Tools::getValue('OPTIC_AICHAT_VIBER'));
+            Configuration::updateValue('OPTIC_AICHAT_EMAIL',         Tools::getValue('OPTIC_AICHAT_EMAIL'));
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_MON_FRI', Tools::getValue('OPTIC_AICHAT_HOURS_MON_FRI'));
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_SAT',     Tools::getValue('OPTIC_AICHAT_HOURS_SAT'));
+            Configuration::updateValue('OPTIC_AICHAT_HOURS_SUN',     Tools::getValue('OPTIC_AICHAT_HOURS_SUN'));
+            $tz = Tools::getValue('OPTIC_AICHAT_TIMEZONE') ?: 'Europe/Athens';
+            Configuration::updateValue('OPTIC_AICHAT_TIMEZONE', $tz);
             $output .= $this->displayConfirmation($this->l('Contact settings saved successfully.'));
         }
 
@@ -1361,7 +1371,7 @@ class Optic_AiChat extends Module
         $currentTab = Tools::getValue('section', 'basic');
 
         // Validate section value
-        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'quickbuttons', 'analytics', 'synonyms', 'fbt', 'handoff'];
+        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'quickbuttons', 'analytics', 'synonyms', 'fbt'];
         if (!in_array($currentTab, $validTabs)) {
             $currentTab = 'basic';
         }
@@ -1375,7 +1385,6 @@ class Optic_AiChat extends Module
             'analytics'    => $this->l('Analytics'),
             'synonyms'     => $this->l('Synonyms & Units'),
             'fbt'          => $this->l('Frequently Bought Together'),
-            'handoff'      => $this->l('Handoff & Contact'),
         ];
 
         $html = '<div class="panel">';
@@ -1422,9 +1431,6 @@ class Optic_AiChat extends Module
                 break;
             case 'fbt':
                 $html .= $this->renderFBTForm();
-                break;
-            case 'handoff':
-                $html .= $this->renderHandoffForm();
                 break;
             default:
                 $html .= $this->renderBasicSettingsForm();
@@ -2015,6 +2021,30 @@ class Optic_AiChat extends Module
                     ['type' => 'text', 'label' => $this->l('Telegram'),           'name' => 'OPTIC_AICHAT_CONTACT_TELEGRAM',  'desc' => $this->l('Telegram username (e.g. myshop)'),                'placeholder' => 'myshop'],
                     ['type' => 'text', 'label' => $this->l('Instagram'),          'name' => 'OPTIC_AICHAT_CONTACT_INSTAGRAM', 'desc' => $this->l('Instagram username or full URL'),                  'placeholder' => 'myshop'],
                     ['type' => 'text', 'label' => $this->l('Facebook Page'),      'name' => 'OPTIC_AICHAT_CONTACT_FACEBOOK',  'desc' => $this->l('Facebook page username or full URL'),              'placeholder' => 'myshoppage'],
+                    ['type' => 'text', 'label' => $this->l('Handoff Phone Number'),    'name' => 'OPTIC_AICHAT_PHONE',         'desc' => $this->l('e.g. +30 210 1234567 — used for agent handoff'), 'placeholder' => '+30 210 1234567'],
+                    ['type' => 'text', 'label' => $this->l('Handoff WhatsApp'),        'name' => 'OPTIC_AICHAT_WHATSAPP',      'desc' => $this->l('e.g. +306901234567'),                             'placeholder' => '+306901234567'],
+                    ['type' => 'text', 'label' => $this->l('Handoff Viber'),           'name' => 'OPTIC_AICHAT_VIBER',         'desc' => $this->l('e.g. +306901234567'),                             'placeholder' => '+306901234567'],
+                    ['type' => 'text', 'label' => $this->l('Support Email (Handoff)'), 'name' => 'OPTIC_AICHAT_EMAIL',         'desc' => $this->l('e.g. support@myshop.gr')],
+                    ['type' => 'text', 'label' => $this->l('Hours Mon–Fri'),           'name' => 'OPTIC_AICHAT_HOURS_MON_FRI', 'desc' => $this->l('e.g. 09:00-17:00'),                              'placeholder' => '09:00-17:00'],
+                    ['type' => 'text', 'label' => $this->l('Hours Saturday'),          'name' => 'OPTIC_AICHAT_HOURS_SAT',     'desc' => $this->l('e.g. 10:00-14:00, or leave empty if closed'),    'placeholder' => '10:00-14:00'],
+                    ['type' => 'text', 'label' => $this->l('Hours Sunday'),            'name' => 'OPTIC_AICHAT_HOURS_SUN',     'desc' => $this->l('Leave empty if closed on Sundays')],
+                    [
+                        'type'    => 'select',
+                        'label'   => $this->l('Timezone'),
+                        'name'    => 'OPTIC_AICHAT_TIMEZONE',
+                        'desc'    => $this->l('Timezone for business hours comparison'),
+                        'options' => [
+                            'query' => [
+                                ['id' => 'Europe/Athens', 'name' => 'Europe/Athens (EET/EEST)'],
+                                ['id' => 'Europe/London', 'name' => 'Europe/London (GMT/BST)'],
+                                ['id' => 'Europe/Berlin', 'name' => 'Europe/Berlin (CET/CEST)'],
+                                ['id' => 'Europe/Paris',  'name' => 'Europe/Paris (CET/CEST)'],
+                                ['id' => 'UTC',           'name' => 'UTC'],
+                            ],
+                            'id'   => 'id',
+                            'name' => 'name',
+                        ],
+                    ],
                 ],
                 'submit'      => ['title' => $this->l('Save Contact Settings'), 'name' => 'submitContactSettings'],
             ],
@@ -2038,6 +2068,14 @@ class Optic_AiChat extends Module
         $helper->fields_value['OPTIC_AICHAT_CONTACT_TELEGRAM']  = Configuration::get('OPTIC_AICHAT_CONTACT_TELEGRAM');
         $helper->fields_value['OPTIC_AICHAT_CONTACT_INSTAGRAM'] = Configuration::get('OPTIC_AICHAT_CONTACT_INSTAGRAM');
         $helper->fields_value['OPTIC_AICHAT_CONTACT_FACEBOOK']  = Configuration::get('OPTIC_AICHAT_CONTACT_FACEBOOK');
+        $helper->fields_value['OPTIC_AICHAT_PHONE']         = Configuration::get('OPTIC_AICHAT_PHONE');
+        $helper->fields_value['OPTIC_AICHAT_WHATSAPP']      = Configuration::get('OPTIC_AICHAT_WHATSAPP');
+        $helper->fields_value['OPTIC_AICHAT_VIBER']         = Configuration::get('OPTIC_AICHAT_VIBER');
+        $helper->fields_value['OPTIC_AICHAT_EMAIL']         = Configuration::get('OPTIC_AICHAT_EMAIL');
+        $helper->fields_value['OPTIC_AICHAT_HOURS_MON_FRI'] = Configuration::get('OPTIC_AICHAT_HOURS_MON_FRI') ?: '09:00-17:00';
+        $helper->fields_value['OPTIC_AICHAT_HOURS_SAT']     = Configuration::get('OPTIC_AICHAT_HOURS_SAT');
+        $helper->fields_value['OPTIC_AICHAT_HOURS_SUN']     = Configuration::get('OPTIC_AICHAT_HOURS_SUN');
+        $helper->fields_value['OPTIC_AICHAT_TIMEZONE']      = Configuration::get('OPTIC_AICHAT_TIMEZONE') ?: 'Europe/Athens';
 
         return $helper->generateForm([$fields_form]);
     }
