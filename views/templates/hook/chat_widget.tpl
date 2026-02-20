@@ -19,11 +19,25 @@
 
     <div id="optic-chat-messages"></div>
 
+    {if isset($quick_buttons) && $quick_buttons|count > 0}
     <div id="optic-chat-suggestions">
-        <button class="quick-reply-btn" data-msg="Τι προσφορές τρέχουν;">🏷️ Προσφορές</button>
-        <button class="quick-reply-btn" data-msg="Πού είναι η παραγγελία μου;">📦 Η Παραγγελία μου</button>
-        <button class="quick-reply-btn" data-msg="Πρότεινέ μου κάτι νέο">✨ Νέες Αφίξεις</button>
+        {foreach from=$quick_buttons item=btn}
+            {if $btn.type == 'link'}
+                <a href="{$btn.url|escape:'html':'UTF-8'}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="quick-reply-btn quick-reply-link">
+                    {$btn.label|escape:'html':'UTF-8'}
+                </a>
+            {else}
+                <button class="quick-reply-btn quick-reply-chat"
+                        data-msg="{$btn.message|escape:'html':'UTF-8'}">
+                    {$btn.label|escape:'html':'UTF-8'}
+                </button>
+            {/if}
+        {/foreach}
     </div>
+    {/if}
 
     <div class="optic-chat-input-area">
         <input type="text" id="optic-chat-input" placeholder="Ρωτήστε με..." />
