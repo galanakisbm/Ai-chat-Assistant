@@ -6,6 +6,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const inputField = document.getElementById('optic-chat-input');
     const messagesArea = document.getElementById('optic-chat-messages');
 
+    // Per-shop unique storage keys
+    const shopSuffix = '_' + (typeof optic_chat_shop_domain !== 'undefined'
+        ? optic_chat_shop_domain
+        : window.location.hostname.replace(/[^a-z0-9]/gi, '_'));
+    const STORAGE_HISTORY      = 'optic_chat_history'      + shopSuffix;
+    const STORAGE_IS_OPEN      = 'optic_chat_is_open'      + shopSuffix;
+    const STORAGE_MANUAL_CLOSE = 'optic_chat_manual_close' + shopSuffix;
+
     // 1. Load History on Start
     loadChatState();
 
@@ -28,8 +36,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Auto-Open Logic (μετά από 8 δευτερόλεπτα αν δεν έχει κλείσει ρητά)
     setTimeout(function() {
-        if (localStorage.getItem('optic_chat_manual_close') !== 'true' && 
-            localStorage.getItem('optic_chat_is_open') !== 'true') {
+        if (localStorage.getItem(STORAGE_MANUAL_CLOSE) !== 'true' && 
+            localStorage.getItem(STORAGE_IS_OPEN) !== 'true') {
             openChat();
         }
     }, 8000);
@@ -40,7 +48,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatContainer.classList.remove('optic-chat-closed');
         chatContainer.classList.add('optic-chat-open');
         toggleBtn.style.display = 'none';
-        localStorage.setItem('optic_chat_is_open', 'true');
+        localStorage.setItem(STORAGE_IS_OPEN, 'true');
         scrollToBottom();
     }
 
@@ -48,8 +56,8 @@ document.addEventListener('DOMContentLoaded', function() {
         chatContainer.classList.remove('optic-chat-open');
         chatContainer.classList.add('optic-chat-closed');
         toggleBtn.style.display = 'block';
-        localStorage.setItem('optic_chat_is_open', 'false');
-        localStorage.setItem('optic_chat_manual_close', 'true'); 
+        localStorage.setItem(STORAGE_IS_OPEN, 'false');
+        localStorage.setItem(STORAGE_MANUAL_CLOSE, 'true'); 
     }
 
     function sendMessage() {
@@ -63,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
         scrollToBottom();
 
         // --- ΛΗΨΗ ΙΣΤΟΡΙΚΟΥ ---
-        let history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
+        let history = JSON.parse(localStorage.getItem(STORAGE_HISTORY)) || [];
         let recentHistory = history.slice(-6); // Στέλνουμε τα τελευταία 6
 
         // --- ΛΗΨΗ PAGE CONTEXT ---
@@ -232,21 +240,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function saveMessageToStorage(data, className) {
-        let history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
+        let history = JSON.parse(localStorage.getItem(STORAGE_HISTORY)) || [];
         // Store the actual data structure for proper restoration
         history.push({ text: JSON.stringify(data), class: className });
         if (history.length > 50) history = history.slice(-50);
-        localStorage.setItem('optic_chat_history', JSON.stringify(history));
+        localStorage.setItem(STORAGE_HISTORY, JSON.stringify(history));
     }
 
     function loadChatState() {
-        if (localStorage.getItem('optic_chat_is_open') === 'true') {
+        if (localStorage.getItem(STORAGE_IS_OPEN) === 'true') {
             chatContainer.classList.remove('optic-chat-closed');
             chatContainer.classList.add('optic-chat-open');
             toggleBtn.style.display = 'none';
         }
         
-        const history = JSON.parse(localStorage.getItem('optic_chat_history')) || [];
+        const history = JSON.parse(localStorage.getItem(STORAGE_HISTORY)) || [];
         
         history.forEach(msg => {
             try {

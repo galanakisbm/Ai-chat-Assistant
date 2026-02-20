@@ -379,7 +379,8 @@ class Optic_AiChat extends Module
 
         Media::addJsDef([
             'optic_chat_ajax_url' => $this->context->link->getModuleLink('optic_aichat', 'ajax'),
-            'optic_chat_welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊'
+            'optic_chat_welcome_message' => Configuration::get('OPTIC_AICHAT_WELCOME_MESSAGE') ?: 'Γεια σας! Είμαι ο ψηφιακός βοηθός. Πώς μπορώ να βοηθήσω; 😊',
+            'optic_chat_shop_domain' => preg_replace('/[^a-z0-9]/i', '_', Tools::getShopDomainSsl())
         ]);
     }
 
