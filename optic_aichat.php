@@ -112,7 +112,16 @@ class Optic_AiChat extends Module
             Configuration::updateValue('OPTIC_AICHAT_FALLBACK_LANG', 'el') &&
             Configuration::updateValue('OPTIC_AICHAT_CUSTOM_ICON', '') &&
             Configuration::updateValue('OPTIC_AICHAT_CUSTOM_LOGO', '') &&
-            Configuration::updateValue('OPTIC_AICHAT_QUICK_BUTTONS', json_encode([]));
+            Configuration::updateValue('OPTIC_AICHAT_QUICK_BUTTONS', json_encode([])) &&
+            Configuration::updateValue('OPTIC_AICHAT_SYNONYMS_RAW', "τετραγωνικά, m², τμ, τ.μ., sqm, m2\nλίτρα, l, lt, liter\nκιλά, kg, κιλο, kilogram\nwatt, w, βατ\ndB, db, decibel, ντεσιμπελ\nαφυγραντήρας, dehumidifier, αφυγραντηρας") &&
+            Configuration::updateValue('OPTIC_AICHAT_SYNONYMS', json_encode([
+                ['τετραγωνικά', 'm²', 'τμ', 'τ.μ.', 'sqm', 'm2'],
+                ['λίτρα', 'l', 'lt', 'liter'],
+                ['κιλά', 'kg', 'κιλο', 'kilogram'],
+                ['watt', 'w', 'βατ'],
+                ['dB', 'db', 'decibel', 'ντεσιμπελ'],
+                ['αφυγραντήρας', 'dehumidifier', 'αφυγραντηρας'],
+            ]));
     }
 
     public function uninstall()
@@ -145,6 +154,8 @@ class Optic_AiChat extends Module
         Configuration::deleteByName('OPTIC_AICHAT_CUSTOM_ICON');
         Configuration::deleteByName('OPTIC_AICHAT_CUSTOM_LOGO');
         Configuration::deleteByName('OPTIC_AICHAT_QUICK_BUTTONS');
+        Configuration::deleteByName('OPTIC_AICHAT_SYNONYMS');
+        Configuration::deleteByName('OPTIC_AICHAT_SYNONYMS_RAW');
         
         // Διαγραφή πίνακα chat logs
         Db::getInstance()->execute("DROP TABLE IF EXISTS `"._DB_PREFIX_."optic_aichat_logs`");
@@ -369,6 +380,27 @@ class Optic_AiChat extends Module
             }
             Configuration::updateValue('OPTIC_AICHAT_QUICK_BUTTONS', json_encode($quickButtons));
             $output .= $this->displayConfirmation($this->l('Quick buttons saved successfully!'));
+        }
+
+        // Handle Synonyms Save
+        if (Tools::isSubmit('submitSynonyms')) {
+            $raw = Tools::getValue('OPTIC_AICHAT_SYNONYMS_RAW');
+            $lines = explode("\n", $raw);
+            $groups = [];
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line)) {
+                    continue;
+                }
+                $terms = array_map('trim', explode(',', $line));
+                $terms = array_values(array_filter($terms, fn($t) => !empty($t)));
+                if (count($terms) >= 2) {
+                    $groups[] = $terms;
+                }
+            }
+            Configuration::updateValue('OPTIC_AICHAT_SYNONYMS', json_encode($groups));
+            Configuration::updateValue('OPTIC_AICHAT_SYNONYMS_RAW', $raw);
+            $output .= $this->displayConfirmation($this->l('Synonyms & Units saved successfully!'));
         }
 
         return $output . $this->renderTabbedForm();
@@ -1216,7 +1248,7 @@ class Optic_AiChat extends Module
         $currentTab = Tools::getValue('section', 'basic');
 
         // Validate section value
-        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'quickbuttons', 'analytics'];
+        $validTabs = ['basic', 'xml', 'knowledge', 'contact', 'quickbuttons', 'analytics', 'synonyms'];
         if (!in_array($currentTab, $validTabs)) {
             $currentTab = 'basic';
         }
@@ -1228,6 +1260,7 @@ class Optic_AiChat extends Module
             'contact'      => $this->l('Contact Links'),
             'quickbuttons' => $this->l('Quick Buttons'),
             'analytics'    => $this->l('Analytics'),
+            'synonyms'     => $this->l('Synonyms & Units'),
         ];
 
         $html = '<div class="panel">';
@@ -1269,12 +1302,61 @@ class Optic_AiChat extends Module
             case 'analytics':
                 $html .= $this->renderAnalyticsDashboard();
                 break;
+            case 'synonyms':
+                $html .= $this->renderSynonymsTab();
+                break;
             default:
                 $html .= $this->renderBasicSettingsForm();
         }
 
         $html .= '</div>'; // tab-content
         $html .= '</div>'; // panel
+
+        return $html;
+    }
+
+    private function renderSynonymsTab()
+    {
+        $currentRaw = Configuration::get('OPTIC_AICHAT_SYNONYMS_RAW') ?:
+            "τετραγωνικά, m², τμ, τ.μ., sqm, m2\nλίτρα, l, lt, liter\nκιλά, kg, κιλο, kilogram\nwatt, w, βατ\ndB, db, decibel, ντεσιμπελ\nαφυγραντήρας, dehumidifier, αφυγραντηρας";
+
+        $html = '<div class="panel">';
+        $html .= '<div class="panel-heading"><i class="icon-refresh"></i> ' . $this->l('Synonyms & Units Manager') . '</div>';
+        $html .= '<div class="panel-body">';
+        $html .= '<p class="help-block">' . $this->l('Enter synonym groups, one per line. Separate terms with commas. Example: τετραγωνικά, m², τμ, sqm') . '</p>';
+        $html .= '<form method="post">';
+        $html .= '<div class="form-group">';
+        $html .= '<label>' . $this->l('Synonym Groups') . '</label>';
+        $html .= '<textarea name="OPTIC_AICHAT_SYNONYMS_RAW" class="form-control" rows="15" style="font-family: monospace;">';
+        $html .= htmlspecialchars($currentRaw, ENT_QUOTES, 'UTF-8');
+        $html .= '</textarea>';
+        $html .= '</div>';
+        $html .= '<button type="submit" name="submitSynonyms" class="btn btn-primary">';
+        $html .= '<i class="icon-save"></i> ' . $this->l('Save Synonyms');
+        $html .= '</button>';
+        $html .= '</form>';
+        $html .= '</div></div>';
+
+        $synonymsJson = Configuration::get('OPTIC_AICHAT_SYNONYMS');
+        if ($synonymsJson) {
+            $groups = json_decode($synonymsJson, true);
+            if ($groups) {
+                $html .= '<div class="panel">';
+                $html .= '<div class="panel-heading">' . $this->l('Parsed Groups Preview') . '</div>';
+                $html .= '<div class="panel-body">';
+                $html .= '<table class="table">';
+                $html .= '<thead><tr><th>#</th><th>' . $this->l('Terms in group') . '</th></tr></thead><tbody>';
+                foreach ($groups as $i => $group) {
+                    $html .= '<tr><td>' . ($i + 1) . '</td><td>';
+                    foreach ($group as $term) {
+                        $html .= '<span class="badge badge-info" style="margin-right:4px; background:#0073aa;">' . htmlspecialchars($term, ENT_QUOTES, 'UTF-8') . '</span>';
+                    }
+                    $html .= '</td></tr>';
+                }
+                $html .= '</tbody></table>';
+                $html .= '</div></div>';
+            }
+        }
 
         return $html;
     }

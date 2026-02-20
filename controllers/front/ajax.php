@@ -466,8 +466,17 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             return $xmlProducts;
         }
         
-        // Fallback to database
+        // Fallback to database — try expanded queries via synonyms
+        $expandedQueries = $this->expandQueryWithSynonyms($query);
         $searchResults = Search::find($id_lang, $query, 1, 8, 'position', 'desc');
+        if (empty($searchResults['result']) && count($expandedQueries) > 1) {
+            foreach (array_slice($expandedQueries, 1) as $expandedQuery) {
+                $searchResults = Search::find($id_lang, $expandedQuery, 1, 8, 'position', 'desc');
+                if (!empty($searchResults['result'])) {
+                    break;
+                }
+            }
+        }
         
         $products = [];
         if (!empty($searchResults['result'])) {
@@ -563,6 +572,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         }
 
         $results = [];
+        $expandedQueries = $this->expandQueryWithSynonyms($query);
 
         foreach ($products as $product) {
             // Search in multiple fields
@@ -577,8 +587,15 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             ]);
             $searchableText = mb_strtolower(implode(' ', $searchFields));
             
-            // Fuzzy search
-            if (strpos($searchableText, $queryLower) !== false) {
+            // Fuzzy search with synonym expansion
+            $matched = false;
+            foreach ($expandedQueries as $q) {
+                if (strpos($searchableText, $q) !== false) {
+                    $matched = true;
+                    break;
+                }
+            }
+            if ($matched) {
                 // Format for AI response with rich data
                 $results[] = [
                     'id' => $product['product_id'],
@@ -601,6 +618,49 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         }
         
         return $results;
+    }
+
+    /**
+     * Expand a query with synonyms/units configured in back-office
+     */
+    private function expandQueryWithSynonyms($query)
+    {
+        $synonymsRaw = Configuration::get('OPTIC_AICHAT_SYNONYMS');
+        if (empty($synonymsRaw)) {
+            return [mb_strtolower(trim($query))];
+        }
+
+        $groups = json_decode($synonymsRaw, true);
+        if (!$groups || !is_array($groups)) {
+            return [mb_strtolower(trim($query))];
+        }
+
+        $queryLower = mb_strtolower(trim($query));
+        // Use associative array as a set for O(1) existence checks
+        $expandedSet = [$queryLower => true];
+
+        foreach ($groups as $group) {
+            // Break from inner loop after finding first match in this group;
+            // continue to next group so multiple synonym groups can apply.
+            foreach ($group as $term) {
+                $termLower = mb_strtolower(trim($term));
+                if (!empty($termLower) && strpos($queryLower, $termLower) !== false) {
+                    foreach ($group as $synonym) {
+                        $synLower = mb_strtolower(trim($synonym));
+                        if (!empty($synLower) && !isset($expandedSet[$synLower])) {
+                            $expandedSet[$synLower] = true;
+                            $substituted = str_replace($termLower, $synLower, $queryLower);
+                            if (!isset($expandedSet[$substituted])) {
+                                $expandedSet[$substituted] = true;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        return array_keys($expandedSet);
     }
 
     private function getLastOrder()
