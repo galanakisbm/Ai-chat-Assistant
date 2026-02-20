@@ -41,15 +41,19 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
             $detectedLang = $fallbackLang;
         }
         
-        $response = $this->handleOpenAIConversation($userMessage, $historyJson, $pageContextJson, $apiKey);
+        $result = $this->handleOpenAIConversation($userMessage, $historyJson, $pageContextJson, $apiKey);
         $responseTime = microtime(true) - $startTime;
 
+        // Feature 6: result is now ['text' => ..., 'is_comparison' => bool]
+        $responseText = is_array($result) ? ($result['text'] ?? '') : $result;
+        $isComparison = is_array($result) ? ($result['is_comparison'] ?? false) : false;
+
         // Log the conversation to both tables
-        $this->logConversation($userMessage, $response, $pageContextJson, $responseTime);
-        $this->logAnalytics($userMessage, $response, $responseTime, $detectedLang);
+        $this->logConversation($userMessage, $responseText, $pageContextJson, $responseTime);
+        $this->logAnalytics($userMessage, $responseText, $responseTime, $detectedLang);
 
         // Parse AI response to structured format
-        $parsedResponse = $this->parseAIResponse($response);
+        $parsedResponse = $this->parseAIResponse($responseText, $isComparison);
 
         $this->returnJson([
             'status' => 'success',
@@ -57,7 +61,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         ]);
     }
 
-    private function parseAIResponse($response)
+    private function parseAIResponse($response, $isComparison = false)
     {
         // First try to parse markdown format (###...![](image)...Τιμή...€...[](url))
         $markdownPattern = '/###\s*(.+?)\n.*?\!\[.*?\]\((https?:\/\/[^\)]+)\).*?Τιμή[:\*\s]+([\d,\.]+)€.*?\[.*?\]\((https?:\/\/[^\)]+)\)/s';
@@ -114,6 +118,26 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         preg_match_all($pattern, $response, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
         
         if (!empty($matches)) {
+            // Feature 6: if comparison query with exactly 2 products, return comparison type
+            if ($isComparison && count($matches) === 2) {
+                $products = [];
+                $introText = trim(substr($response, 0, $matches[0][0][1]));
+                foreach ($matches as $match) {
+                    $products[] = [
+                        'id'    => $match[1][0],
+                        'name'  => $match[2][0],
+                        'price' => $match[3][0],
+                        'image' => $match[4][0],
+                        'url'   => $match[5][0]
+                    ];
+                }
+                return [
+                    'type'     => 'comparison',
+                    'text'     => $introText ?: null,
+                    'products' => $products
+                ];
+            }
+
             $result = [
                 'type' => 'mixed',
                 'content' => []
@@ -332,19 +356,55 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         $contactContext .
         $languageInstruction;
 
+        // Feature 7: Build handoff info for system prompt
+        $handoffInfo = '';
+        if (Configuration::get('OPTIC_AICHAT_PHONE') || Configuration::get('OPTIC_AICHAT_WHATSAPP') || Configuration::get('OPTIC_AICHAT_EMAIL')) {
+            $handoffInfo = "\n\nΣτοιχεία επικοινωνίας:\n";
+            if (Configuration::get('OPTIC_AICHAT_PHONE')) {
+                $handoffInfo .= "Τηλέφωνο: " . Configuration::get('OPTIC_AICHAT_PHONE') . "\n";
+            }
+            if (Configuration::get('OPTIC_AICHAT_WHATSAPP')) {
+                $handoffInfo .= "WhatsApp: " . Configuration::get('OPTIC_AICHAT_WHATSAPP') . "\n";
+            }
+            if (Configuration::get('OPTIC_AICHAT_VIBER')) {
+                $handoffInfo .= "Viber: " . Configuration::get('OPTIC_AICHAT_VIBER') . "\n";
+            }
+            if (Configuration::get('OPTIC_AICHAT_EMAIL')) {
+                $handoffInfo .= "Email: " . Configuration::get('OPTIC_AICHAT_EMAIL') . "\n";
+            }
+            $withinHours = $this->isWithinBusinessHours();
+            $handoffInfo .= $withinHours
+                ? "Είμαστε τώρα διαθέσιμοι τηλεφωνικά.\n"
+                : "Είμαστε εκτός ωραρίου. Προτείνετε στον χρήστη να στείλει μήνυμα WhatsApp/email ή να επικοινωνήσει την επόμενη εργάσιμη.\n";
+        }
+
+        $systemInstruction .= $handoffInfo;
+
         // Build History Context
         $messages = [['role' => 'system', 'content' => $systemInstruction]];
         if (!empty($history) && is_array($history)) {
-            foreach ($history as $msg) {
-                $role = (strpos($msg['class'], 'user-message') !== false) ? 'user' : 'assistant';
-                $messages[] = ['role' => $role, 'content' => strip_tags($msg['text'])];
+            foreach (array_slice($history, -10) as $turn) {
+                // Feature 5: support new {role, content} format
+                if (isset($turn['role'], $turn['content'])) {
+                    $messages[] = [
+                        'role'    => in_array($turn['role'], ['user', 'assistant']) ? $turn['role'] : 'user',
+                        'content' => mb_substr((string)$turn['content'], 0, 500)
+                    ];
+                } elseif (isset($turn['class'])) {
+                    // Legacy {class, text} format
+                    $role = (strpos($turn['class'], 'user-message') !== false) ? 'user' : 'assistant';
+                    $messages[] = ['role' => $role, 'content' => mb_substr(strip_tags((string)$turn['text']), 0, 500)];
+                }
             }
         }
         $messages[] = ['role' => 'user', 'content' => $userMessage];
 
+        // Feature 6: detect comparison query
+        $isComparison = $this->isComparisonQuery($userMessage);
+
         // Step 1: OpenAI Call
         $result = $this->callOpenAI($messages, $tools, $apiKey);
-        if (isset($result['error'])) return "OpenAI Error: " . $result['error']['message'];
+        if (isset($result['error'])) return ['text' => "OpenAI Error: " . $result['error']['message'], 'is_comparison' => false];
         
         $message = $result['choices'][0]['message'];
 
@@ -358,7 +418,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 $toolOutput = "";
 
                 if ($functionName === 'search_products') {
-                    $toolOutput = json_encode($this->searchProducts($args['query']));
+                    $toolOutput = json_encode($this->searchProducts($args['query'], $isComparison));
                 } elseif ($functionName === 'get_cms_page_content') {
                     $toolOutput = json_encode($this->getCmsContent($args['cms_id']));
                 } elseif ($functionName === 'get_my_orders') {
@@ -372,10 +432,10 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
 
             // Step 3: Final Response
             $finalResult = $this->callOpenAI($messages, null, $apiKey); 
-            return $finalResult['choices'][0]['message']['content'];
+            return ['text' => $finalResult['choices'][0]['message']['content'], 'is_comparison' => $isComparison];
         }
 
-        return $message['content'];
+        return ['text' => $message['content'], 'is_comparison' => $isComparison];
     }
 
     private function detectLanguage($message)
@@ -455,12 +515,12 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         return "Η σελίδα δεν βρέθηκε.";
     }
 
-    private function searchProducts($query)
+    private function searchProducts($query, $isComparison = false)
     {
         $id_lang = Context::getContext()->language->id;
         
         // Try XML first (faster)
-        $xmlProducts = $this->searchProductsFromXML($query);
+        $xmlProducts = $this->searchProductsFromXML($query, $isComparison);
         
         if (!empty($xmlProducts)) {
             return $xmlProducts;
@@ -563,7 +623,7 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         return trim(preg_replace('/\s{2,}/', ' ', $cleaned));
     }
 
-    private function searchProductsFromXML($query)
+    private function searchProductsFromXML($query, $isComparison = false)
     {
         $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
         
@@ -624,6 +684,15 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         $cleanQuery  = $priceFilter ? $this->stripPriceFromQuery($queryLower) : $queryLower;
         $expandedQueries = $this->expandQueryWithSynonyms($cleanQuery);
 
+        // Feature 2: Color filter detection
+        $colorFilter = $this->parseColorFilter($query);
+
+        // Feature 3: Size query detection
+        $isSizeQ = $this->isSizeQuery($query);
+
+        // Feature 6: limit to 2 for comparison
+        $maxResults = $isComparison ? 2 : 5;
+
         $results = [];
 
         foreach ($products as $product) {
@@ -661,10 +730,22 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 }
             }
 
+            // Feature 2: Color filter
+            if ($colorFilter !== null) {
+                if (strpos($searchableText, $colorFilter) === false) {
+                    continue;
+                }
+            }
+
+            // Feature 3: Include full description when size query
+            $description = $isSizeQ
+                ? ($product['description'] ?: ($product['short_description'] ?? ''))
+                : ($product['short_description'] ?: ($product['description'] ?? ''));
+
             $results[] = [
                 'id'           => $product['product_id'],
                 'name'         => $product['title'],
-                'description'  => $product['short_description'] ?: ($product['description'] ?? ''),
+                'description'  => $description,
                 'price'        => $product['price_sale'],
                 'regular_price'=> $product['price_regular'] ?? '',
                 'image'        => $product['image'],
@@ -677,7 +758,13 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
                 'instock'      => $product['instock'] ?? '',
             ];
 
-            if (count($results) >= 5) {
+            // Feature 4: Append FBT suggestions
+            $fbt = $this->getFrequentlyBoughtTogether($product['product_id'], $product['category'] ?? '');
+            if (!empty($fbt)) {
+                $results[count($results) - 1]['frequently_bought_together'] = $fbt;
+            }
+
+            if (count($results) >= $maxResults) {
                 break;
             }
         }
@@ -726,6 +813,130 @@ class Optic_AiChatAjaxModuleFrontController extends ModuleFrontController
         }
 
         return array_keys($expandedSet);
+    }
+
+    /**
+     * Feature 2: Parse color filter from query
+     */
+    private function parseColorFilter($query)
+    {
+        $colors = [
+            'κόκκινο','κοκκινο','red','μπλε','blue','πράσινο','πρασινο','green',
+            'μαύρο','μαυρο','black','άσπρο','ασπρο','λευκό','λευκο','white',
+            'κίτρινο','κιτρινο','yellow','πορτοκαλί','πορτοκαλι','orange',
+            'ροζ','pink','μωβ','purple','γκρι','grey','gray','καφέ','καφε','brown',
+            'μπεζ','beige','χρυσό','χρυσο','gold','ασημί','ασημι','silver',
+            'πετρόλ','petrol','χακί','khaki','εκρού','ecru'
+        ];
+        $queryLower = mb_strtolower($query);
+        foreach ($colors as $color) {
+            if (strpos($queryLower, $color) !== false) {
+                return $color;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Feature 3: Detect size-related queries
+     */
+    private function isSizeQuery($query)
+    {
+        $sizeKeywords = ['μέγεθος','μεγεθος','νούμερο','νουμερο','size','μέση','μεση',
+            'στήθος','στηθος','ισχία','ισχια','ταιριάζει','ταιριαζει','cm','χιλιοστά',
+            'φαρδύ','φαρδυ','στενό','στενο','μεγαλύτερο','μεγαλυτερο'];
+        $q = mb_strtolower($query);
+        foreach ($sizeKeywords as $kw) {
+            if (strpos($q, $kw) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Feature 4: Frequently bought together
+     */
+    private function getFrequentlyBoughtTogether($productId, $category)
+    {
+        $rules = json_decode(Configuration::get('OPTIC_AICHAT_FBT_RULES') ?: '{}', true);
+        if (is_array($rules) && isset($rules[$productId])) {
+            return $rules[$productId];
+        }
+        if (Configuration::get('OPTIC_AICHAT_FBT_AUTO')) {
+            $cacheFile = _PS_MODULE_DIR_ . 'optic_aichat/uploads/products_cache.json';
+            if (!file_exists($cacheFile)) return [];
+            $allProducts = json_decode(file_get_contents($cacheFile), true);
+            if (!is_array($allProducts)) return [];
+            $suggestions = [];
+            foreach ($allProducts as $p) {
+                if ((string)$p['product_id'] !== (string)$productId && ($p['category'] ?? '') === $category) {
+                    $suggestions[] = $p['product_id'];
+                    if (count($suggestions) >= 2) break;
+                }
+            }
+            return $suggestions;
+        }
+        return [];
+    }
+
+    /**
+     * Feature 6: Detect comparison queries
+     */
+    private function isComparisonQuery($query)
+    {
+        $keywords = ['σύγκριση','συγκριση','σύγκρινε','συγκρινε','compare',
+                     'διαφορά','διαφορα','versus',' vs ','ή το','ή αυτό'];
+        $q = mb_strtolower($query);
+        foreach ($keywords as $kw) {
+            if (strpos($q, $kw) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Feature 7: Check if current time is within business hours
+     */
+    private function isWithinBusinessHours()
+    {
+        $timezone = Configuration::get('OPTIC_AICHAT_TIMEZONE') ?: 'Europe/Athens';
+        try {
+            $tz = new DateTimeZone($timezone);
+        } catch (Exception $e) {
+            $tz = new DateTimeZone('Europe/Athens');
+        }
+        $now = new DateTime('now', $tz);
+        $dow = (int)$now->format('N'); // 1=Mon ... 7=Sun
+
+        if ($dow >= 1 && $dow <= 5) {
+            $hoursStr = Configuration::get('OPTIC_AICHAT_HOURS_MON_FRI');
+        } elseif ($dow === 6) {
+            $hoursStr = Configuration::get('OPTIC_AICHAT_HOURS_SAT');
+        } else {
+            $hoursStr = Configuration::get('OPTIC_AICHAT_HOURS_SUN');
+        }
+
+        if (empty($hoursStr)) {
+            return false; // closed this day
+        }
+
+        $parts = explode('-', $hoursStr);
+        if (count($parts) !== 2) {
+            return false;
+        }
+
+        $openTime  = DateTime::createFromFormat('H:i', trim($parts[0]), $tz);
+        $closeTime = DateTime::createFromFormat('H:i', trim($parts[1]), $tz);
+        if (!$openTime || !$closeTime) {
+            return false;
+        }
+
+        $openTime->setDate((int)$now->format('Y'), (int)$now->format('m'), (int)$now->format('d'));
+        $closeTime->setDate((int)$now->format('Y'), (int)$now->format('m'), (int)$now->format('d'));
+
+        return $now >= $openTime && $now <= $closeTime;
     }
 
     private function getLastOrder()

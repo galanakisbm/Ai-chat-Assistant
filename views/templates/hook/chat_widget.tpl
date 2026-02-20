@@ -37,6 +37,7 @@
             {/if}
             <span>{$chat_title|escape:'html':'UTF-8'}</span>
         </div>
+        <button id="optic-chat-clear" aria-label="Clear chat" title="Εκκαθάριση ιστορικού">🗑️</button>
         <button id="optic-chat-close" aria-label="Close">✕</button>
     </div>
 
